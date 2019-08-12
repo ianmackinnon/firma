@@ -11,8 +11,14 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+import os
 import re
 import time
+import base64
+import shutil
+import logging
+from pathlib import Path
+from tempfile import NamedTemporaryFile
 
 import requests
 
@@ -24,7 +30,11 @@ from selenium.webdriver.support.wait import WebDriverWait
 from selenium.common.exceptions import \
     NoSuchElementException, NoSuchWindowException, WebDriverException
 
+from firma.pdf import write_compressed_pdf, write_header_pdf, write_headed_pdf, temp_path
 
+
+
+LOG = logging.getLogger("firma.browser")
 
 DEFAULT_CHROMEDRIVER_PATH = "/usr/lib/chromium-browser/chromedriver"
 DEFAULT_TIMEOUT = 15
@@ -42,6 +52,23 @@ class WindowGeometry():
         (self.width, self.height, self.x, self.y) = [int(v) for v in match.groups()]
 
 
+
+class RenderError(Exception):
+    pass
+
+class RequiredElementNotFoundError(Exception):
+    pass
+
+
+
+# Helper functions
+
+def xpath_class(text):
+    return f'contains(concat(" ", normalize-space(@class), " "), " {text} ")'
+
+
+
+# Driver class
 
 class SeleniumDriver():
     """
@@ -83,6 +110,8 @@ class SeleniumDriver():
             );
 
         driver._EXTRA_PDF_WARNING = False
+
+        driver._show = show
 
         return driver
 
@@ -149,6 +178,72 @@ class SeleniumDriver():
         self.implicitly_wait(timeout)
         assert self.get_timeout("implicit") == timeout
 
+    def send_command(self, cmd, params=None):
+        url = (
+            f"{self.command_executor._url}"
+            f"/session/{self.session_id}/chromium/send_command_and_get_result"
+        )
+
+        params2 = {
+            "cmd": cmd,
+            "params": params or {}
+        }
+
+        response = requests.post(url, json=params2)
+
+        data = response.json()
+
+        return data["value"]
+
+
+    def _save_pdf_chromium(self, path, params=None):
+        result = self.send_command("Page.printToPDF", params=params)
+
+        if "error" in result:
+            if self._show:
+                LOG.warning("Cannot render PDFs when browser is visible")
+            if "message" in result:
+                LOG.error(result["message"])
+            raise RenderError("Failed to print to PDF")
+
+        data_base64 = result["data"]
+        data = base64.b64decode(data_base64)
+
+        with open(str(path), "wb") as fp:
+            fp.write(data)
+        LOG.debug("Saved PDF to %s", path)
+
+
+    def save_pdf(self, path, params=None, recompress=None, headers=None):
+        """
+        `recompress` will recompress the output PDF
+            (requires Ghostscript)
+        `headers` may be a list of text headers to stamp onto the pages
+            (requires Ghostscript and PDFTK)
+        """
+
+        prefix = path.stem
+        pdf_path = temp_path(prefix=f"{prefix}.orig.", suffix=".pdf")
+        self._save_pdf_chromium(pdf_path, params=params)
+
+        if recompress:
+            pdf_path_compressed = temp_path(prefix=f"{prefix}.compressed.", suffix=".pdf")
+            write_compressed_pdf(pdf_path_compressed, pdf_path)
+            os.remove(pdf_path)
+            pdf_path = pdf_path_compressed
+
+        if headers:
+            pdf_path_headers = temp_path(prefix=f"{prefix}.headers.", suffix=".pdf")
+            pdf_path_headed = temp_path(prefix=f"{prefix}.headed.", suffix=".pdf")
+
+            write_header_pdf(pdf_path_headers, headers=headers)
+            write_headed_pdf(pdf_path_headed, pdf_path, pdf_path_headers)
+            os.remove(pdf_path_headers)
+            os.remove(pdf_path)
+            pdf_path = pdf_path_headed
+
+        shutil.move(pdf_path, path)
+
 
     def find(
             self, selector,
@@ -181,8 +276,9 @@ class SeleniumDriver():
         if wait != self._default_timeout:
             self._driver.implicitly_wait(self._default_timeout)
 
-        if required:
-            assert result
+        if required and not result:
+            raise RequiredElementNotFoundError(
+                f"No elements found for selector `{selector}`.")
 
         return result
 
@@ -192,7 +288,51 @@ class SeleniumDriver():
 
 
     def scroll_to_view(self, element):
+        """
+        This is not reliable.
+        """
         ActionChains(self).move_to_element(element).perform()
+
+
+    def scroll_to_center(self, element):
+        script = """
+console.log("a");
+const rect = arguments[0].getBoundingClientRect();
+console.log("b");
+window.scrollTo(
+        (rect.left + window.pageXOffset) - (window.innerWidth / 2),
+        (rect.top + window.pageYOffset) - (window.innerHeight / 2)
+);
+console.log("c");
+"""
+        self.execute_script(script, element)
+
+
+    def scroll_and_click(self, element):
+        LOG.debug("Scrolling to link for %s...", element.text)
+        self.scroll_to_center(element)
+        LOG.debug("Done")
+
+        LOG.debug("Clicking link for %s...", element.text)
+        element.click()
+        LOG.debug("Done")
+
+
+    def remove(self, element):
+        script = "arguments[0].parentNode.removeChild(arguments[0]);"
+        self.execute_script(script, element)
+
+
+    def element_text(self, element):
+        """
+        Text of element not including children
+        """
+
+        return self.execute_script("""
+return jQuery(arguments[0]).contents().filter(function() {
+    return this.nodeType == Node.TEXT_NODE;
+}).text();
+""", element)
 
 
     def keep(self, timeout):
