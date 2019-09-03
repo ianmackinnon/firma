@@ -87,9 +87,8 @@ class SeleniumDriver():
 
         chrome_options = Options()
 
-        if show:
-            chrome_options.add_argument('--auto-open-devtools-for-tabs')
-        else:
+        chrome_options.add_argument('--auto-open-devtools-for-tabs')
+        if not show:
             chrome_options.add_argument("--headless")
 
         if socks5_proxy:

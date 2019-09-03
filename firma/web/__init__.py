@@ -28,6 +28,7 @@ from pprint import pprint
 from typing import Any, Dict, List
 from hashlib import sha1
 from subprocess import Popen, PIPE
+from collections import namedtuple
 
 from dateutil.relativedelta import relativedelta
 
@@ -56,6 +57,11 @@ DEFAULTS = {
 
 ARG_DEFAULT = []
 PROFILE_PRECISION = 3
+
+
+
+Host = namedtuple("Host", ("protocol", "host"))
+
 
 
 def conf_get(ini_path, section, key, default=ARG_DEFAULT):
@@ -450,6 +456,7 @@ class Application(tornado.web.Application):
 
                     if "cmd" in manifest:
                         cmd = manifest["cmd"](target, manifest.get("deps", None))
+
                         return_code = run(cmd)
                         if return_code != 0:
                             raise ResourceBuildException(
@@ -529,11 +536,35 @@ class StaticFileHandler(tornado.web.StaticFileHandler):
 
 
 class BaseHandler(tornado.web.RequestHandler):
+    def _get_uhost(self):
+        proto = self.request.headers.get(
+            "X-Forwarded-Proto", None)
+
+        host = self.request.headers.get(
+            "X-Forwarded-Host", None)
+
+        if host:
+            port = self.request.headers.get(
+                "X-Forwarded-Port", None)
+            if port:
+                host += ":{port:d}"
+
+        return Host(
+            proto or self.request.protocol,
+            host or self.request.host,
+        )
+
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.start = None
         self.profile = None
-        self.url_root = self.request.headers.get("X-Forwarded-Root", "/")
+
+        self.url_root_full = self.request.headers.get("X-Forwarded-Root", "/")
+        self.url_root = urllib.parse.urlparse(self.url_root_full).path
+
+        self.uhost = self._get_uhost()
+
         sys.stdout.flush()
 
         if self.settings.options.cors == "all":
@@ -570,7 +601,7 @@ class BaseHandler(tornado.web.RequestHandler):
             self.set_header("Access-Control-Allow-Headers", ",".join([
                 "X-Requested-With",
                 "Authorization",
-                "Content-Type"
+                "Content-Type",
             ]))
 
 
