@@ -28,6 +28,7 @@ from pathlib import Path
 from subprocess import Popen, PIPE
 
 import requests
+from onetimepass import get_totp
 
 import pytest
 
@@ -211,8 +212,10 @@ def sensitive_url(request, base_url):
 
 @pytest.fixture(scope="session")
 def credentials(request):
-    path = Path(request.config.option.credentials)
-    data = json.loads(path.read_text())
+    credentials_path = request.config.option.credentials
+    if not credentials_path:
+        return None
+    data = json.loads(Path(credentials_path).read_text())
     return data
 
 
@@ -439,35 +442,62 @@ def get_chrome_options(request):
 
 
 
-@pytest.fixture(scope="session")
-def selenium_session(request, selenium_url_hook):
-    driver = SeleniumDriver(
-        driver=None,
-        **get_chrome_options(request)
-    )
+def generate_selenium_session_fixture(**kwargs):
+    """
+    kwargs:
 
-    LOG.debug("Default timeout: %.3f" % driver._default_timeout)
-    LOG.debug("Retry: %s" % request.config.getoption("--server-retry"))
+    `on_create_hook`:
+      A callback with signature  `f(request, selenium)` to run when
+      the fixture is created.
+    """
 
-    get_orig = driver.get
+    @pytest.fixture(scope="session")
+    def fix(request, selenium_url_hook, credentials):
+        driver = SeleniumDriver(
+            driver=None,
+            **get_chrome_options(request)
+        )
 
-    def get(url, *args, **kwargs):
-        return get_orig(selenium_url_hook(url), *args, **kwargs)
+        LOG.debug("Default timeout: %.3f" % driver._default_timeout)
+        LOG.debug("Retry: %s" % request.config.getoption("--server-retry"))
 
-    driver.get = get
+        get_orig = driver.get
 
-    yield driver
+        def get(url, *args, **kwargs):
+            return get_orig(selenium_url_hook(url), *args, **kwargs)
 
-    keep = False
+        driver.get = get
 
-    if request.config.getoption("--keep-browser-always"):
-        keep = True
+        if "on_create_hook" in kwargs:
+            kwargs["on_create_hook"](request, driver, credentials)
 
-    if keep:
-        driver.keep(240)
+        yield driver
 
-    driver.close_if_open()
+        keep = False
 
+        if request.config.getoption("--keep-browser-always"):
+            keep = True
+
+        if keep:
+            driver.keep(240)
+
+        driver.close_if_open()
+
+    return fix
+
+
+
+def auth_params(credentials, user_id_key):
+    return {
+        user_id_key: credentials[user_id_key],
+        "password": credentials["password"],
+        "token": get_totp(credentials["onetime_secret"]),
+    }
+
+
+
+
+selenium_session = generate_selenium_session_fixture()
 
 
 

@@ -419,12 +419,13 @@ class Application(tornado.web.Application):
             Ensure up-to-date target exists
             """
 
+            log_f = app_log.debug
 
             target_path = static_path / target
 
             if str(target) not in deps:
                 if target_path.exists():
-                    app_log.debug("Dependency `%s` exists", target_path)
+                    log_f("Dependency `%s` exists", target_path)
                 else:
                     raise ResourceDependencyException(
                         "Required resource dependency %s does not exist." % target_path)
@@ -443,12 +444,12 @@ class Application(tornado.web.Application):
                         target_path.exists() and
                         target_path.stat().st_mtime >= sub_target_mtime
                 ):
-                    app_log.debug("Target `%s` is up to date", target_path)
+                    log_f("Target `%s` is up to date", target_path)
                 else:
                     if target_path.exists():
-                        app_log.debug("Target `%s` is out of date", target_path)
+                        log_f("Target `%s` is out of date", target_path)
                     else:
-                        app_log.debug("Target `%s` does not exist", target_path)
+                        log_f("Target `%s` does not exist", target_path)
 
                     target_path.parent.mkdir(exist_ok=True)
 
@@ -1022,6 +1023,32 @@ class BaseHandler(tornado.web.RequestHandler):
 
 
 
+class AuthPasswordOtpMixin():
+    def get_login_arguments(self, user_id_key):
+        args = {
+            user_id_key: self.get_argument(user_id_key, None),
+            "password": self.get_argument("password", None),
+            "token": self.get_argument("token", None),
+            "next": self.get_argument("next", "/"),
+        }
+
+        missing = [k for k, v in args.items() if not(v)]
+        if missing:
+            raise tornado.web.HTTPError(
+                400, "Values for %s are required." % ", ".join(missing))
+
+        return args
+
+
+    def verify_user(self, user, args):
+        if not user.verify_password_hash(args["password"]):
+            raise tornado.web.HTTPError(401, "Unauthorized")
+
+        if not user.verify_onetimepass(args["token"]):
+            raise tornado.web.HTTPError(401, "Unauthorized")
+
+
+
 class AuthGoogleOAuth2UserMixin(tornado.auth.GoogleOAuth2Mixin):
     async def _oauth_get_user_future(
         self, access_token: Dict[str, Any]
@@ -1040,7 +1067,6 @@ class AuthGoogleOAuth2UserMixin(tornado.auth.GoogleOAuth2Mixin):
         access_token = await super().get_authenticated_user(redirect_uri, code)
         user_data = await self._oauth_get_user_future(access_token)
         return user_data
-
 
 
 
@@ -1083,17 +1109,30 @@ class SecondaryDatabaseMixin(object):
 
 class UserMixin(object):
     """
-    Client class should be a SQLAlchemy model with attributes
-    `password_hash`.
-    `onetime_secret`.
+    Client class should be a SQLAlchemy model with the
+    follosing attributes, eg.:
+
+    HASH_ALG = hashlib.sha256
+    SALT_LENGTH = 7
+    SECRET_LENGTH = 16
+
+    password_hash = Column(LONGTEXT(
+        length=USER_HASH_ALG().digest_size * 2,
+        charset="latin1",
+        collation="latin1_swedish_ci"
+    ))
+    onetime_secret = Column(LONGTEXT(
+        length=16,
+        charset="latin1",
+        collation="latin1_swedish_ci"
+    ))
     """
 
     # pylint: disable=not-callable
-    # `HASH_ALG` must be defined as a hashing function
 
     HASH_ALG = None
     SALT_LENGTH = None
-    SECRET_LENGTH = 16
+    SECRET_LENGTH = None
 
     def set_password_hash(self, plaintext):
         """
