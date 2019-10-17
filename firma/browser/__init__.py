@@ -248,7 +248,8 @@ class SeleniumDriver():
             self, selector,
             node=None, method="css", multiple=False, wait=None, required=False
     ):
-        if wait in (None, True):
+        if wait is None or wait is True:
+            # `if wait in (None, True)` returns `True` when `wait = 1` :(
             wait = self._default_timeout
 
         if wait is False:
