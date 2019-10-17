@@ -16,17 +16,20 @@ import re
 import sys
 import time
 import json
+import stat
 import errno
 import bisect
 import base64
+import hashlib
 import logging
 import datetime
 import functools
-import urllib.parse
+import mimetypes
 import configparser
+import email.utils
+import urllib.parse
 from pprint import pprint
 from typing import Any, Dict, List
-from hashlib import sha1
 from subprocess import Popen, PIPE
 from collections import namedtuple
 
@@ -230,7 +233,7 @@ class Application(tornado.web.Application):
 
     @staticmethod
     def sha1_hex(*parts):
-        hasher = sha1()
+        hasher = hashlib.sha1()
         for part in parts:
             hasher.update(part.encode())
         return hasher.hexdigest()
@@ -533,6 +536,86 @@ class StaticFileHandler(tornado.web.StaticFileHandler):
             self.set_header("Allow", allow)
             self.set_header("Access-Control-Allow-Origin", "*")
             self.set_header("Access-Control-Allow-Headers", "X-Requested-With")
+
+
+
+class GenerateFileHandler(StaticFileHandler):
+    # Override
+    def generate(self, path, abspath):
+        raise NotImplementedError
+
+    def initialize(self, path, default_filename=None):
+        self.root = os.path.abspath(path) + os.path.sep
+        self.default_filename = default_filename
+
+    def get(self, path, include_body=True):
+        path = self.parse_url_path(path)
+        abspath = os.path.abspath(os.path.join(self.root, path))
+        # os.path.abspath strips a trailing /
+        # it needs to be temporarily added back for requests to root/
+        if not (abspath + os.path.sep).startswith(self.root):
+            raise tornado.web.HTTPError(403, "%s is not in root static directory", path)
+        if os.path.isdir(abspath) and self.default_filename is not None:
+            # need to look at the request.path here for when path is empty
+            # but there is some prefix to the path that was already
+            # trimmed by the routing
+            if not self.request.path.endswith("/"):
+                self.redirect(self.request.path + "/")
+                return
+            abspath = os.path.join(abspath, self.default_filename)
+
+        #---
+        if not os.path.exists(abspath):
+            self.generate(path, abspath)
+        #---
+
+        if not os.path.exists(abspath):
+            raise tornado.web.HTTPError(404)
+        if not os.path.isfile(abspath):
+            raise tornado.web.HTTPError(403, "%s is not a file", path)
+
+        stat_result = os.stat(abspath)
+        modified = datetime.datetime.fromtimestamp(stat_result[stat.ST_MTIME])
+
+        self.set_header("Last-Modified", modified)
+
+        mime_type, _encoding = mimetypes.guess_type(abspath)
+        if mime_type:
+            self.set_header("Content-Type", mime_type)
+
+        cache_time = self.get_cache_time(path, modified, mime_type)
+        if cache_time > 0:
+            self.set_header("Expires", datetime.datetime.utcnow() + \
+                                       datetime.timedelta(seconds=cache_time))
+            self.set_header("Cache-Control", "max-age=" + str(cache_time))
+        else:
+            self.set_header("Cache-Control", "public")
+
+        self.set_extra_headers(path)
+
+        # Check the If-Modified-Since, and don't send the result if the
+        # content has not been modified
+        ims_value = self.request.headers.get("If-Modified-Since")
+        if ims_value is not None:
+            date_tuple = email.utils.parsedate(ims_value)
+            if_since = datetime.datetime.fromtimestamp(time.mktime(date_tuple))
+            if if_since >= modified:
+                self.set_status(304)
+                return
+
+        with open(abspath, "rb") as fp:
+            data = fp.read()
+
+            if not hasattr(self, "etag") or self.etag:
+                hasher = hashlib.sha1()
+                hasher.update(data)
+                self.set_header("Etag", '"%s"' % hasher.hexdigest())
+
+            if include_body:
+                self.write(data)
+            else:
+                assert self.request.method == "HEAD"
+                self.set_header("Content-Length", len(data))
 
 
 

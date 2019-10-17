@@ -256,6 +256,13 @@ class SeleniumDriver():
 
         if node is None:
             node = self._driver
+        else:
+            if method == "xpath" and selector.startswith("//"):
+                LOG.warning(
+                    "Node supplied to find function but "
+                    "XPath selector starts with root node `//`. "
+                    f"`{selector}`"
+                    "Did you mean to search for `descendant::`?")
 
         by = {
             "css": By.CSS_SELECTOR,
