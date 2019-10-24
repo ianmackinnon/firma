@@ -112,7 +112,8 @@ var firma = (function () {
         buffer.ajaxData = undefined;
       };
 
-      var query = function (data, context) {
+      var query;
+      var delayQuery = function (data, context) {
         data = _.clone(data);
 
         if (_.isEqual(data, buffer.resultData)) {
@@ -145,12 +146,24 @@ var firma = (function () {
           buffer.ajax = null;
           buffer.ajaxData = null;
           buffer.resultData = data;
+
           if (_.isFunction(success)) {
-            success(response, textStatus, request, context);
+            success(response, textStatus, request, _.extend(context, {
+              data: data
+            }));
           }
           if (_.isFunction(complete)) {
             complete();
           }
+        };
+
+        query = function (data) {
+          if (_.isFunction(waiting)) {
+            waiting(_.clone(data));
+          }
+          app.ajax(name, _.extend(options, {
+            data: data
+          }));
         };
 
         clear();
@@ -166,18 +179,20 @@ var firma = (function () {
             abort();
             buffer.ajax = options.query(data, options.success);
           } else {
-            app.ajax(name, _.extend(options, {
-              data: data
-            }));
+            query(data);
           }
         }, delay);
 
         if (_.isFunction(waiting)) {
-          waiting();
+          waiting(data);
         }
       };
 
-      return query;
+      delayQuery.query = function (data) {
+        query(data);
+      };
+
+      return delayQuery;
     },
 
     ajaxBuffered: function (name, options) {
