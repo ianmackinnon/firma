@@ -1,4 +1,4 @@
-/*global window, $, _ */
+/*global window, $, _, URI */
 
 var firma = (function () {
   "use strict";
@@ -409,6 +409,99 @@ var firma = (function () {
         var f = app.template._functionCache[name];
         var html = app.template.process(name, f, data, options);
         return html;
+      }
+    },
+
+    // Navigation
+
+    regexRoute: function (routes, path, callback) {
+      var routeMatch = false;
+      var groups = false;
+      _.forEach(routes, function (route, i) {
+        var regex = route.regex;
+        var regexMatch = regex.exec(path);
+        if (regexMatch) {
+          groups = [];
+          for (var j = 1; j < regexMatch.length; j++) {
+            groups.push(regexMatch[j]);
+          }
+          routeMatch = route;
+          return false;
+        }
+      });
+
+      if (routeMatch === false) {
+        console.error("No route for path:", path);
+      }
+
+      callback(routeMatch, groups);
+    },
+
+    urlRemoveRoot: function (root, path) {
+      if ((path + "/") == root) {
+        path = path.substring(root.length - 1);
+      } else if (path.indexOf(root) === 0) {
+        path = path.substring(root.length);
+      }
+      if (path.indexOf("/") !== 0) {
+        path = "/" + path;
+      }
+      return path;
+    },
+
+    uriToResource: function (root, uri, options) {
+      var resource;
+
+      options = _.extend({
+        query: true
+      }, options);
+
+      if (_.isNil(uri)) {
+        uri = window.location;
+      }
+
+      if (options.query) {
+        resource = URI(uri).resource();
+      } else {
+        resource = URI(uri).path();
+      }
+
+      resource = firma.urlRemoveRoot(root, resource);
+
+      return resource;
+    },
+
+    resourceToUri: function (root, resource) {
+      return root + resource;
+    },
+
+    navigate: function (root, resource, options) {
+      var currentResource = firma.uriToResource(root);
+
+      options = _.extend({
+        trigger: true,
+        replace: false,
+        reload: false
+      }, options);
+
+      if (resource === currentResource) {
+        if (options.reload) {
+          options.replace = true;
+        } else {
+          return;
+        }
+      }
+
+      var url = firma.resourceToUri(root, resource);
+
+      if (options.replace) {
+        window.history.replaceState(null, null, url);
+      } else {
+        window.history.pushState({}, null, url);
+      }
+
+      if (options.trigger && _.isFunction(options.onTrigger)) {
+        options.onTrigger();
       }
     }
   };

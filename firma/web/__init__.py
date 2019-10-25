@@ -644,7 +644,15 @@ class BaseHandler(tornado.web.RequestHandler):
         self.start = None
         self.profile = None
 
-        self.url_root_full = self.request.headers.get("X-Forwarded-Root", "/")
+        # `self.url_root_full` may or may not contain a host.
+        self.url_root_full = self.request.headers.get("X-Forwarded-Root", "")
+        if self.url_root_full.endswith("/"):
+            app_log.error(
+                "X-Forwarded-Root may not end with a slash `%s` `%s`.",
+                self.url_root_full, self.request.uri)
+            raise tornado.web.HTTPError(400)
+
+        # `self.url_root` does not contain a host.
         self.url_root = urllib.parse.urlparse(self.url_root_full).path
 
         self.uhost = self._get_uhost()
@@ -694,15 +702,6 @@ class BaseHandler(tornado.web.RequestHandler):
     @property
     def settings(self):
         return self.application.settings
-
-    @property
-    def url_root_dir(self):
-        """
-        Return the root path without a trailing slash.
-        """
-        if self.url_root == "/":
-            return self.url_root
-        return self.url_root.rstrip("/")
 
     # Profile
 
@@ -886,7 +885,7 @@ class BaseHandler(tornado.web.RequestHandler):
             del kwargs["path"]
 
         kwargs = dict(list({
-            "path": self.url_root_dir
+            "path": self.url_root
         }.items()) + list((kwargs or {}).items()))
 
         key = self.cookie_name(key)
