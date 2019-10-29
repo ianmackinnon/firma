@@ -303,14 +303,11 @@ class SeleniumDriver():
 
     def scroll_to_center(self, element):
         script = """
-console.log("a");
 const rect = arguments[0].getBoundingClientRect();
-console.log("b");
 window.scrollTo(
         (rect.left + window.pageXOffset) - (window.innerWidth / 2),
         (rect.top + window.pageYOffset) - (window.innerHeight / 2)
 );
-console.log("c");
 """
         self.execute_script(script, element)
 
