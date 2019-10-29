@@ -28,6 +28,8 @@ from pathlib import Path
 from subprocess import Popen, PIPE
 
 import requests
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
 from onetimepass import get_totp
 
 import pytest
@@ -53,7 +55,7 @@ DURATION_LOG = None
 class HttpConnectionError(Exception):
     def __init__(self, message, url, *args, **kwargs):
         super().__init__(message, *args, **kwargs)
-        LOG.error("Host unreachable: %s" % url)
+        LOG.error("Host unreachable: %s", url)
         pytest.exit("Host unreachable")
 
 
@@ -83,7 +85,8 @@ $(if ! git diff-files --quiet; then echo -dirty; fi)\
 
 def get_duration_log(log_dir):
     if not VC_ID:
-        return
+        return None
+
     timestamp = datetime.datetime.utcnow().strftime("%Y-%m-%d.%H-%M-%S.utc")
 
     log_path = Path(log_dir)
@@ -91,6 +94,7 @@ def get_duration_log(log_dir):
 
     log_path.mkdir(exist_ok=True)
     LOG.info("Opening duration log %s", file_path.resolve())
+
     return open(file_path, "w", encoding="utf-8")
 
 
