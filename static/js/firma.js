@@ -113,7 +113,7 @@ var firma = (function () {
       };
 
       var query;
-      var delayQuery = function (data, context) {
+      var delayQuery = function (data, context, noRequest) {
         data = _.clone(data);
 
         if (_.isEqual(data, buffer.resultData)) {
@@ -166,25 +166,27 @@ var firma = (function () {
           }));
         };
 
-        clear();
-        buffer.timeoutData = data;
-        buffer.timeout = setTimeout(function () {
-          buffer.ajax = true;
-          buffer.ajaxData = data;
-          buffer.timeout = null;
-          buffer.timeoutData = null;
-          if (!sendNull && _.isNull(data)) {
-            options.success();
-          } else if (_.isFunction(options.query)) {
-            abort();
-            buffer.ajax = options.query(data, options.success);
-          } else {
-            query(data);
-          }
-        }, delay);
+        if (!noRequest) {
+          clear();
+          buffer.timeoutData = data;
+          buffer.timeout = setTimeout(function () {
+            buffer.ajax = true;
+            buffer.ajaxData = data;
+            buffer.timeout = null;
+            buffer.timeoutData = null;
+            if (!sendNull && _.isNull(data)) {
+              options.success();
+            } else if (_.isFunction(options.query)) {
+              abort();
+              buffer.ajax = options.query(data, options.success);
+            } else {
+              query(data);
+            }
+          }, delay);
 
-        if (_.isFunction(waiting)) {
-          waiting(data);
+          if (_.isFunction(waiting)) {
+            waiting(data);
+          }
         }
       };
 
@@ -476,6 +478,11 @@ var firma = (function () {
     },
 
     navigate: function (root, resource, options) {
+      // To be called when the user initiates navigation.
+      // -   Update the URL immediately
+      // -   Initiate site routing in the `onTrigger` callback
+      // -   Set a null page state, since it won't be loaded yet.
+
       var currentResource = firma.uriToResource(root);
 
       options = _.extend({
@@ -503,7 +510,95 @@ var firma = (function () {
       if (options.trigger && _.isFunction(options.onTrigger)) {
         options.onTrigger();
       }
+    },
+
+    setCompleteState: function (state) {
+      // To be called when the page data is fully loaded.
+      // -   Save the page content state to `sessionStorage`
+      // -   Set the history state to the localStorage key
+      // -   Automated test browsers can watch `window.history.state` for
+      //     changes to determine when new pages have fully loaded.
+      //
+      // `state` must be an object.
+
+      var index = 0;
+      var indexStr = window.sessionStorage.getItem("firmaStateIndex");
+      var key, serializedState;
+
+      if (!_.isObject(state)) {
+        throw new Error("Parameter `state` of `firma.setCompleteState` must be an object.");
+      }
+
+      if (!_.isNil(indexStr)) {
+        index = JSON.parse(indexStr) + 1;
+      }
+
+      key = "firmaState-" + index;
+
+      serializedState = JSON.stringify(state);
+
+      window.sessionStorage.setItem(key, serializedState);
+      window.sessionStorage.setItem("firmaStateIndex", JSON.stringify(index));
+
+      window.history.replaceState(key, null);
+
+      return key;
+    },
+
+    getState: function (key) {
+      var stateStr = window.sessionStorage.getItem(key);
+      var keyAux, state, stateAuxStr, stateAux;
+
+      if (_.isNil(key)) {
+        return key;
+      }
+
+      if (_.isNil(stateStr)) {
+        console.warn("Failed to retrieve state", key);
+        return undefined;
+      }
+
+      keyAux = key + "-aux";
+      state = JSON.parse(stateStr);
+      stateAuxStr = window.sessionStorage.getItem(keyAux);
+      if (!_.isNil(stateAuxStr)) {
+        stateAux = JSON.parse(stateAuxStr);
+        _.extend(state, stateAux);
+      }
+
+      return state;
+    },
+
+    setAuxState: function (state) {
+      // To be called when changing auxilliary data (eg. scroll position) to be
+      // added to state when retrieving it.
+      //
+      // Does not involve reading, updating and writing saved state.
+      // Previous aux state will be overwritten.
+      //
+      // `state` must be an object.
+      //
+      // If the value of `history.state` is:
+      // -   an object, update it with `state`
+      // -   anything else, throw an error
+      //
+
+      var key = window.history.state;
+
+      if (_.isNil(key)) {
+        console.warn("Cannot update null state");
+        return;
+      }
+
+      if (!_.isObject(state)) {
+        throw new Error("Parameter `state` of `firma.updateState` must be an object.");
+      }
+
+      var keyAux = key + "-aux";
+
+      window.sessionStorage.setItem(keyAux, JSON.stringify(state));
     }
+
   };
 
   return app;
