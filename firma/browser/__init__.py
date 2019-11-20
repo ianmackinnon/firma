@@ -357,6 +357,10 @@ return jQuery(arguments[0]).contents().filter(function() {
 
 
     def assert_failed(self, url, status_code):
+        """
+        Assert that there exists a console error matching `url` and `status_code`.
+        """
+
         fail_message = None
         for entry in self.get_log("browser"):
             if (

@@ -1,5 +1,296 @@
 /*global window, $, _, URI */
 
+function AjaxBuffer (options) {
+  //
+  // Options:
+  //
+  // `debug` If truthy, log debug messages to `console.log`.
+  // `delay` Delay in ms before launching request
+  //
+  // `expire` Called when delay period starts.
+  //   May be used to dim current content.
+  // `unexpire` Called when request is called with query identical to last results,
+  //   in which case `success` and `complete` are not called.
+  //   May be used to undim expired content.
+  // `data`: data for an initial request
+  // `context`: context for an initial request
+  //
+  // `processRequest`
+  // `processResponse`
+
+  if (_.isUndefined(options)) {
+    // Allow for inheritance.
+    return;
+  }
+
+  var success = options.success;
+  var error = options.error;
+  var complete = options.complete;
+
+  var self = this;
+
+  if (this === window) {
+    var e = new Error("AjaxBuffer called without `new` keyword");
+    console.error(e.stack);
+    throw e;
+  }
+
+  self.abort = options.abort;
+  self.expire = options.expire;
+  self.unexpire = options.unexpire;
+
+  options = _.defaults(options || {}, {
+    debug: false
+  });
+
+  self.name = options.name;
+  self.debug = options.debug;
+  self.delay = options.delay;
+
+  self.state = undefined;
+
+  delete options.success;
+  delete options.error;
+  delete options.complete;
+
+  delete options.abort;
+  delete options.expire;
+  delete options.unexpire;
+
+  delete options.name;
+  delete options.delay;
+
+  // Everything left in `options` is for `jQuery.ajax`.
+  self.defaults = options;
+
+  self.defaults.success = function (response, textStatus, request, context) {
+    self.log("defaults.success", response, context);
+    if (_.isFunction(self.processResponse)) {
+      self.processResponse(response);
+    }
+    if (_.isFunction(success)) {
+      success(response, textStatus, request, context);
+    }
+  };
+
+  self.defaults.error = function (jqXhr, status, err, context) {
+    if (status === "abort") {
+      self.log("defaults.abort");
+      if (_.isFunction(self.abort)) {
+        self.abort(jqXhr, status, err, context);
+      }
+      return;
+    }
+
+    self.log("defaults.error", jqXhr, context);
+    if (_.isFunction(error)) {
+      error(jqXhr, status, err, context);
+    } else {
+      console.error("Unhandled AJAX error", jqXhr, status, err);
+    }
+  };
+
+  self.defaults.complete = function (jqXhr, status, context) {
+    self.log("defaults.complete", jqXhr, context);
+    delete self.state.xhr;
+    if (_.isFunction(complete)) {
+      complete(jqXhr, status, context);
+    }
+  };
+
+  self.reset();
+}
+
+AjaxBuffer.prototype = {
+  log: function () {
+    var args = ["AjaxBuffer"];
+    if (!this.debug) {
+      return;
+    }
+    if (this.name) {
+      args.push(this.name);
+    }
+    args = args.concat(Array.prototype.slice.call(arguments, 0));
+    console.log.apply(console, args);
+  },
+
+  reset: function (args) {
+    this.log("reset");
+    this.abortTimeout();
+    this.abortRequest();
+    this.state = {
+      timeout: null,
+      xhr: null,
+      deferred: null,
+      promise: null,
+      timeoutData: undefined,  // Input data for last timeout
+      requestData: undefined,  // Input data for last request
+      resultData: undefined    // Input data for last result
+    };
+  },
+
+  abortTimeout: function () {
+    if (this.state && this.state.timeout) {
+      this.log("aborting incomplete timeout");
+      clearTimeout(this.state.timeout);
+      this.state.deferred.reject();
+      this.state.timeout = null;
+      this.state.deferred = null;
+      this.state.promise = null;
+      this.state.timeoutData = undefined;
+    }
+  },
+
+  abortRequest: function () {
+    if (this.state && this.state.xhr) {
+      this.log("aborting incomplete request");
+      this.state.xhr.abort();
+      this.state.xhr = null;
+      this.state.requestData = undefined;
+    }
+  },
+
+  request: function (options) {
+    //
+    // Options:
+    //
+    // `data`: Data to be sent as JSON
+    // `context` Javascript objects (eg. DOM elements, closures, callbacks)
+    //   to be sent back to the `success` callback.
+    // `delay`: If defined, override default delay
+    //
+
+    var self = this;
+    var data, context;
+
+    options = options || {};
+
+    if (!_.isUndefined(options.data)) {
+      data = _.cloneDeep(options.data);
+    } else if (!_.isUndefined(self.defaults.data)) {
+      data = self.defaults.data;
+    } else {
+      data = null;  // `data` may not be `undefined`.
+    }
+
+    context = _.extend(options.context, {
+      data: data
+    });
+
+    delete options.context;
+
+    this.log("request", this.state, options, context);
+    this.log("delay", options.delay, this.delay);
+
+    options.delay = _.isUndefined(options.delay) ? this.delay : options.delay;
+
+    var success = function (response, textStatus, request) {
+      self.log("request > success", response, context);
+      self.state.resultData = _.cloneDeep(data);
+      self.defaults.success(response, textStatus, request, context);
+    };
+
+    var error = function (jqXhr, status, err) {
+      self.log("request > error", jqXhr, status, err);
+      self.state.resultData = undefined;
+      self.defaults.error(jqXhr, status, err, context);
+    };
+
+    var complete = function (jqXhr, status) {
+      self.log("request > complete", jqXhr, status);
+      self.state.xhr = null;
+      self.state.requestData = undefined;
+      self.defaults.complete(jqXhr, status, context);
+    };
+
+    var request = function () {
+      var ajaxOptions = _.cloneDeep(self.defaults);
+      if (options.url) {
+        ajaxOptions.url = options.url;
+      }
+      _.extend(ajaxOptions, {
+        data: data,
+        success: success,
+        error: error,
+        complete: complete,
+      });
+
+      self.log("actual request", self.state, ajaxOptions);
+
+      self.state.requestData = _.cloneDeep(data);
+      if (_.isFunction(self.processRequest)) {
+        ajaxOptions.data = self.processRequest(_.cloneDeep(ajaxOptions.data));
+      }
+      self.state.xhr = $.ajax(ajaxOptions);
+
+      return self.state.xhr;
+    };
+
+    var immediateRequest = function () {
+      self.log("immediate request", self.state, options);
+
+      if (_.isFunction(self.expire)) {
+        self.expire(_.cloneDeep(data));
+      }
+      self.abortTimeout();
+      self.abortRequest();
+      return request();
+    };
+
+    var delayedRequest = function () {
+      self.log("delayedRequest", self.state, options);
+
+      if (self.state.xhr && _.isEqual(data, self.state.requestData)) {
+        self.log("equal request");
+        return self.state.xhr;
+      }
+
+      if (self.state.timeout && _.isEqual(data, self.state.timeoutData)) {
+        self.log("equal timeout");
+        return self.state.promise;
+      }
+
+      self.abortTimeout();
+      self.abortRequest();
+      self.state.timeoutData = _.cloneDeep(data);
+      self.state.deferred = new $.Deferred();
+      self.state.promise = self.state.deferred.promise();
+
+      if (_.isFunction(self.expire)) {
+        self.expire(data);
+      }
+
+      self.state.timeout = setTimeout(function () {
+        self.log("timeout fire", options.delay);
+        request()
+          .done(self.state.deferred.resolve)
+          .fail(self.state.deferred.reject)
+        ;
+      }, options.delay);
+      self.log("timeout set", options.delay);
+
+      return self.state.promise;
+    };
+
+    if (_.isEqual(data, this.state.resultData)) {
+      this.log("equal result");
+      this.abortTimeout();
+      this.abortRequest();
+      if (_.isFunction(this.unexpire)) {
+        this.unexpire();
+      }
+      // Nothing to do, resolve immediately with no data:
+      return Promise.resolve();
+    }
+
+    if (options.delay) {
+      return delayedRequest();
+    }
+
+    return immediateRequest();
+  }
+};
+
 var firma = (function () {
   "use strict";
 
@@ -13,7 +304,14 @@ var firma = (function () {
     _xhrDebug: false,
     _xhrBuffers: {},
 
-    ajax: function (name, options) {
+    ajax: function (options) {
+      options = _.defaults(options || {}, {
+        debug: undefined,
+      });
+      return new AjaxBuffer(options).request();
+    },
+
+    ajax_old: function (name, options) {
       if (app._xhr[name]) {
         if (app._xhrDebug) {
           console.warn("Aborting", name, app._xhr[name]);
@@ -33,28 +331,28 @@ var firma = (function () {
         }
       };
 
-      options.error = function (jqXHR, status, error) {
+      options.error = function (jqXhr, status, error) {
         if (status === "abort") {
           if (_.isFunction(abortCallback)) {
-            abortCallback(jqXHR, status, error);
+            abortCallback(jqXhr, status, error);
           }
           return;
         }
         app.ajaxBufferClear(name);
         if (_.isFunction(errorCallback)) {
-          errorCallback(jqXHR, status, error);
+          errorCallback(jqXhr, status, error);
         } else {
-          console.error("error", jqXHR, status, error);
+          console.error("error", jqXhr, status, error);
         }
       };
 
-      options.complete = function (jqXHR, status) {
+      options.complete = function (jqXhr, status) {
         if (app._xhrDebug) {
           console.warn("Complete", name, status, app._xhr[name]);
         }
         delete app._xhr[name];
         if (_.isFunction(completeCallback)) {
-          completeCallback(jqXHR, status);
+          completeCallback(jqXhr, status);
         }
       };
 
@@ -291,7 +589,7 @@ var firma = (function () {
             app.template._templateDict = response;
             callback();
           },
-          error: function (jqXHR, textStatus, errorThrown) {
+          error: function (jqXhr, textStatus, errorThrown) {
             console.error("Failed to load JSON: ", textStatus, errorThrown);
           }
         });
@@ -318,7 +616,7 @@ var firma = (function () {
               app.template._functionCache[name] = f;
               deferred.resolveWith(null, [f]);
             },
-            error: function (jqXHR, textStatus, errorThrown) {
+            error: function (jqXhr, textStatus, errorThrown) {
               deferred.reject();
             }
           });
@@ -525,8 +823,12 @@ var firma = (function () {
       var indexStr = window.sessionStorage.getItem("firmaStateIndex");
       var key, serializedState;
 
+      if (_.isNull(state)) {
+        window.history.replaceState(null, null);
+        return null;
+      }
       if (!_.isObject(state)) {
-        throw new Error("Parameter `state` of `firma.setCompleteState` must be an object.");
+        throw new Error("Parameter `state` of `firma.setCompleteState` must be an object or `null`.");
       }
 
       if (!_.isNil(indexStr)) {
