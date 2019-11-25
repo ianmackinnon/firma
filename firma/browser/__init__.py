@@ -327,6 +327,16 @@ window.scrollTo(
         self.execute_script(script, element)
 
 
+    def get_scroll_x(self):
+        return self.execute_script(
+            "return document.documentElement.scrollLeft || document.body.scrollLeft;")
+
+
+    def get_scroll_y(self):
+        return self.execute_script(
+            "return document.documentElement.scrollTop || document.body.scrollTop;")
+
+
     def element_text(self, element):
         """
         Text of element not including children
