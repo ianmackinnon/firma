@@ -47,6 +47,7 @@ setuptools.setup(
         "selenium",
         "sqlalchemy",
         "tornado",
+        "unidecode",
     ],
     python_requires='>=3',
     scripts=[

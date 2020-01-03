@@ -150,6 +150,8 @@ class SeleniumDriver():
 
 
     def __getattr__(self, name):
+        if name == "switch_to" and self._show:
+            LOG.warning("Warning: Switching to an iframe is unstable when browser is visible.")
         return getattr(self._driver, name)
 
 
