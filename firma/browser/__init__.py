@@ -386,14 +386,15 @@ return jQuery(arguments[0]).contents().filter(function() {
         assert fail_message
 
 
-    def javascript_errors(self, base_url):
+    def javascript_errors(self, base_url, allow_warnings=False):
         errors = []
         for entry in self.get_log("browser"):
             if entry["level"] == "SEVERE" and entry["source"] == "network":
                 if "http" in entry["message"] and base_url not in entry["message"]:
                     continue
 
-            errors.append(entry)
+            if allow_warnings and entry["level"] == "WARNING":
+                continue
 
         return errors
 
