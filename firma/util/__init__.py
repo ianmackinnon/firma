@@ -13,8 +13,10 @@
 
 import os
 import re
+import sys
 import shutil
 import logging
+import traceback
 from typing import Union
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -32,6 +34,12 @@ LOG = logging.getLogger("firma.util")
 
 
 
+def format_traceback():
+    _exc_type, _exc_value, exc_traceback = sys.exc_info()
+    return "".join(traceback.format_tb(exc_traceback))
+
+
+
 def format_slug(text):
     if not text:
         return None
@@ -44,8 +52,20 @@ def format_slug(text):
 
 
 
-def format_whitespace(text):
+def format_whitespace(
+        text: str,
+        multiline: Union[bool, None] = None
+) -> str:
     re_whitespace = re.compile(r"\s+")
+
+    if multiline:
+        out = []
+        for line in text.splitlines():
+            line = format_whitespace(line)
+            if line:
+                out.append(line)
+        return "\n".join(out)
+
     return re_whitespace.sub(" ", text).strip()
 
 
