@@ -23,7 +23,6 @@ import base64
 import hashlib
 import logging
 import datetime
-import functools
 import mimetypes
 import configparser
 import email.utils
@@ -64,6 +63,19 @@ PROFILE_PRECISION = 3
 
 
 Host = namedtuple("Host", ("protocol", "host"))
+
+
+
+def add_samesite_cookie_support():
+    # Not required for Python 3.8+
+
+    from http.cookies import Morsel
+
+    Morsel._reserved[str('samesite')] = str('SameSite')
+
+
+
+add_samesite_cookie_support()
 
 
 
@@ -245,15 +257,19 @@ class Application(tornado.web.Application):
     def load_cookie_secret(path):
         try:
             return path.read_text().strip()
-        except IOError:
+        except ioerror:
             sys.stderr.write(
-                "Could not open XSRF key. Run 'make .xsrf' to generate one.\n")
+                "could not open xsrf key. run 'make .xsrf' to generate one.\n")
             sys.exit(1)
 
-    def init_cookies(self, prefix, xsrf_path):
+    def init_cookies(self, prefix, xsrf_path, **kwargs):
         cookie_secret = self.load_cookie_secret(xsrf_path)
         self.settings.update({
             "xsrf_cookies": True,
+            "xsrf_cookie_kwargs": {
+                "httponly": True,
+                "samesite": "strict",
+            },
             "cookie_secret": cookie_secret,
         })
         self.settings.app.cookie_prefix = prefix
@@ -955,7 +971,10 @@ class BaseHandler(tornado.web.RequestHandler):
 
     def start_session(self, value):
         self.app_set_cookie(
-            "session", value, path=self.application.SESSION_COOKIE_PATH)
+            "session", value,
+            path=self.application.SESSION_COOKIE_PATH,
+            samesite="lax",  # Cannot use OAuth with `strict`.
+        )
 
     def end_session(self):
         self.app_clear_cookie(
