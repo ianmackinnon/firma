@@ -305,6 +305,9 @@ var firma = (function () {
     _xhrBuffers: {},
 
     ajax: function (options) {
+      if (app._xhrDebug) {
+        console.log("ajax", name, options);
+      }
       options = _.defaults(options || {}, {
         debug: undefined,
       });
@@ -459,7 +462,8 @@ var firma = (function () {
           if (_.isFunction(waiting)) {
             waiting(_.clone(data));
           }
-          app.ajax(name, _.extend(options, {
+          app.ajax(_.extend(options, {
+            name: name,
             data: data
           }));
         };
