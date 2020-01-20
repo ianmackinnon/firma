@@ -309,8 +309,10 @@ class CacheRedis(object):
             pass
         return None
 
-#    def delete_item(self, key):
-#        return self._delete(self._prefix(key))
+
+    def delete_item(self, key):
+        return self._delete(self._prefix(key))
+
 
     def exists_item(self, key, accept_old=False):
         current_key = self._prefix(key)
