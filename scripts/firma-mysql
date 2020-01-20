@@ -14,7 +14,6 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import sys
-import getpass
 import logging
 import argparse
 
@@ -28,7 +27,11 @@ from firma.storage.mysql import \
     mysql_empty, \
     mysql_drop_triggers, \
     mysql_drop, \
-    mysql_generate_conf
+    mysql_update_users, \
+    mysql_generate_conf, \
+    get_admin_cursor, \
+    get_root_cursor
+
 
 
 LOG = logging.getLogger('mysql')
@@ -38,8 +41,8 @@ LOG = logging.getLogger('mysql')
 def main_functions(
         conf_path,
         key=None, purge=False, empty=False, drop_triggers=False,
-        account=None, generate=False, generate_dump=False, test=False,
-        source=None):
+        account=None, generate=False, generate_dump=False, update_users=False,
+        test=False, source=None):
     # pylint: disable=too-many-return-statements
 
     options = get_conf(conf_path)
@@ -59,49 +62,13 @@ def main_functions(
             LOG.error("Database and users not correctly set up.")
             sys.exit(1)
 
-
-    db_options = {
-        "host": "localhost",
-        # "unix_socket": "/var/run/mysqld/mysqld.sock",
-    }
-
     if source or empty or drop_triggers:
-        db_options.update({
-            "user": options.admin_username,
-            "passwd": options.admin_password,
-        })
-    elif purge:
-        db_options.update({
-            "user": "root",
-            "passwd": getpass.getpass("MySQL root password: "),
-        })
+        cursor = get_admin_cursor(options)
+    elif (purge or update_users):
+        cursor = get_root_cursor()
     else:
+        # Use the MySQL root account
         return mysql_create(options)
-
-    try:
-        connection = pymysql.connect(**db_options)
-    except pymysql.err.OperationalError as e:
-        if str(e).startswith("(1045,"):
-            # Access denied
-            if "using password: NO" in str(e):
-                LOG.error("Could not access database. No password was supplied.")
-                sys.exit(1)
-            elif "using password: YES" in str(e):
-                LOG.error("Could not access database.")
-                LOG.error("-   Supplied password may be incorrect.")
-                LOG.error("-   User password may not have been initialized.")
-                LOG.error("-   MySql Root account may be disabled for non-root OS users.")
-                sys.exit(1)
-        if str(e).startswith("(2003,"):
-            # Cannot connect
-            LOG.error("Could not connect to MySQL server at localhost.")
-            LOG.error("-   Check the server is running. `ps -ef | grep mysql`.")
-            LOG.error("-   If `/var/run/mysqld/mysqld.sock` exists, the server is.")
-            LOG.error("    running, but not accepting connections to localhost.")
-            sys.exit(1)
-        raise e
-
-    cursor = connection.cursor()
 
     try:
         cursor.execute("use %s" % options.database)
@@ -129,8 +96,13 @@ def main_functions(
     if drop_triggers:
         return mysql_drop_triggers(cursor, options)
 
-    # Purge
-    return mysql_drop(cursor, options)
+    if purge:
+        return mysql_drop(cursor, options)
+
+    if update_users:
+        return mysql_update_users(cursor, options)
+
+    raise Exception("No action specified")
 
 
 
@@ -181,6 +153,10 @@ def main():
         action="store_true", default=False,
         help="Generate MySQL dump conf to stdout.")
     parser.add_argument(
+        "--update-users", "-u",
+        action="store_true",
+        help="Update Users and Priviledges.")
+    parser.add_argument(
         "--source", "-s",
         action="store", dest="source",
         help="Source SQL.")
@@ -204,6 +180,7 @@ def main():
         account=args.account,
         generate=args.generate,
         generate_dump=args.generate_dump,
+        update_users=args.update_users,
         test=args.test,
         source=args.source
     )

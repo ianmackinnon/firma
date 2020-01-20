@@ -388,7 +388,8 @@ return jQuery(arguments[0]).contents().filter(function() {
     def javascript_errors(
             self,
             host: Union[Iterable[str], str, None] = None,
-            host_ignore: Union[Iterable[str], str, None] = None
+            host_ignore: Union[Iterable[str], str, None] = None,
+            allow_warnings: Union[bool, None] = None
     ):
         host_list = [host] if isinstance(host, str) else host
         host_ignore_list = [host_ignore] if isinstance(host_ignore, str) else host_ignore

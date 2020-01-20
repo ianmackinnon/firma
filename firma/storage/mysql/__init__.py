@@ -263,6 +263,18 @@ def mysql_drop(cursor, options):
 
 
 
+def mysql_update_users(cursor, options):
+    if options.app_username:
+        create_user(cursor, options.app_username, options.app_password, [
+            "select, insert, update, delete on %s" % options.database,
+        ] + options.app_privileges)
+
+    create_user(cursor, options.admin_username, options.admin_password, [
+        "all privileges on %s" % options.database,
+        # "reload on %s" % options.database,
+    ] + options.admin_privileges)
+
+
 # Checksum
 
 def database_hash(conf_path):
@@ -331,20 +343,21 @@ password=%s
 
 
 
-def mysql_create(options):
-    if mysql_test(options):
-        LOG.info("Database and users already correctly set up. Nothing to do.")
-        return
-
-    db_options = {
-        "host": "localhost",
-        "user": "root",
-        "passwd": getpass.getpass("MySQL root password: "),
-    }
-
+def get_cursor(db_options):
     try:
         connection = pymysql.connect(**db_options)
-    except pymysql.err.InternalError as e:
+    except pymysql.err.OperationalError as e:
+        if str(e).startswith("(1045,"):
+            # Access denied
+            if "using password: NO" in str(e):
+                LOG.error("Could not access database. No password was supplied.")
+                sys.exit(1)
+            elif "using password: YES" in str(e):
+                LOG.error("Could not access database.")
+                LOG.error("-   Supplied password may be incorrect.")
+                LOG.error("-   User password may not have been initialized.")
+                LOG.error("-   MySql Root account may be disabled for non-root OS users.")
+                sys.exit(1)
         if str(e).startswith("(1698,"):
             # Access denied
             # This is the error that occurs if we try to initialize the database
@@ -355,11 +368,48 @@ def mysql_create(options):
             if "root" in str(e):
                 LOG.error("-   MySql Root account may be disabled for non-root OS users.")
             sys.exit(1)
+        if str(e).startswith("(2003,"):
+            # Cannot connect
+            LOG.error("Could not connect to MySQL server at localhost.")
+            LOG.error("-   Check the server is running. `ps -ef | grep mysql`.")
+            LOG.error("-   If `/var/run/mysqld/mysqld.sock` exists, the server is.")
+            LOG.error("    running, but not accepting connections to localhost.")
+            sys.exit(1)
         else:
             LOG.error("Could not connect with supplied credentials.")
-        print(e)
-        sys.exit(1)
+        raise e
+
     cursor = connection.cursor()
+
+    return cursor
+
+
+
+def get_root_cursor():
+    return get_cursor({
+        "host": "localhost",
+        "user": "root",
+        "passwd": getpass.getpass("MySQL root password: "),
+    })
+
+
+
+def get_admin_cursor(options):
+    return get_cursor({
+        "host": "localhost",
+        "user": options.admin_username,
+        "passwd": options.admin_password,
+        # "unix_socket": "/var/run/mysqld/mysqld.sock",
+    })
+
+
+
+def mysql_create(options):
+    if mysql_test(options):
+        LOG.info("Database and users already correctly set up. Nothing to do.")
+        return
+
+    cursor = get_root_cursor()
 
     try:
         cursor.execute("use %s;" % options.database)
