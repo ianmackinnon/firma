@@ -314,59 +314,6 @@ var firma = (function () {
       return new AjaxBuffer(options).request();
     },
 
-    ajax_old: function (name, options) {
-      if (app._xhr[name]) {
-        if (app._xhrDebug) {
-          console.warn("Aborting", name, app._xhr[name]);
-        }
-        app._xhr[name].abort();
-      }
-
-      var abortCallback = options.abort;
-      var errorCallback = options.error;
-      var successCallback = options.success;
-      var completeCallback = options.complete;
-
-      options.success = function (response, textStatus, request) {
-        app.parseApi(response);
-        if (_.isFunction(successCallback)) {
-          successCallback(response, textStatus, request);
-        }
-      };
-
-      options.error = function (jqXhr, status, error) {
-        if (status === "abort") {
-          if (_.isFunction(abortCallback)) {
-            abortCallback(jqXhr, status, error);
-          }
-          return;
-        }
-        app.ajaxBufferClear(name);
-        if (_.isFunction(errorCallback)) {
-          errorCallback(jqXhr, status, error);
-        } else {
-          console.error("error", jqXhr, status, error);
-        }
-      };
-
-      options.complete = function (jqXhr, status) {
-        if (app._xhrDebug) {
-          console.warn("Complete", name, status, app._xhr[name]);
-        }
-        delete app._xhr[name];
-        if (_.isFunction(completeCallback)) {
-          completeCallback(jqXhr, status);
-        }
-      };
-
-      app._xhr[name] = $.ajax(options);
-      if (app._xhrDebug) {
-        console.warn("Calling", name, app._xhr[name]);
-      }
-
-      return app._xhr[name];
-    },
-
     ajaxBuffer: function (name, options) {
       if (app._xhrDebug) {
         console.log("ajaxBuffer", name, _.cloneDeep(options));
@@ -499,12 +446,14 @@ var firma = (function () {
       return delayQuery;
     },
 
-    ajaxBuffered: function (name, options) {
+    ajaxBuffered: function (options) {
       if (app._xhrDebug) {
-        console.log("ajaxBuffered", name, _.cloneDeep(options));
+        console.log("ajaxBuffered", _.cloneDeep(options));
       }
 
+      var name = _.clone(options.name);
       var data = _.clone(options.data);
+      delete options.name;
       delete options.data;
       return app.ajaxBuffer(name, options)(data);
     },

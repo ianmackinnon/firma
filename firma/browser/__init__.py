@@ -17,8 +17,7 @@ import time
 import base64
 import shutil
 import logging
-from pathlib import Path
-from tempfile import NamedTemporaryFile
+from typing import Iterable, Union
 
 import requests
 
@@ -386,15 +385,37 @@ return jQuery(arguments[0]).contents().filter(function() {
         assert fail_message
 
 
-    def javascript_errors(self, base_url, allow_warnings=False):
+    def javascript_errors(
+            self,
+            host: Union[Iterable[str], str, None] = None,
+            host_ignore: Union[Iterable[str], str, None] = None
+    ):
+        host_list = [host] if isinstance(host, str) else host
+        host_ignore_list = [host_ignore] if isinstance(host_ignore, str) else host_ignore
+
+        def ignore(entry):
+            for third_party in host_ignore_list or []:
+                if third_party in entry["message"]:
+                    return True
+            return False
+
         errors = []
         for entry in self.get_log("browser"):
-            if entry["level"] == "SEVERE" and entry["source"] == "network":
-                if "http" in entry["message"] and base_url not in entry["message"]:
-                    continue
-
-            if allow_warnings and entry["level"] == "WARNING":
+            if ignore(entry):
                 continue
+
+            if entry["level"] == "SEVERE":
+                if entry["source"] == "network" and "http" in entry["message"]:
+                    for host_item in host_list or []:
+                        if host_item in entry["message"]:
+                            break
+                    else:
+                        continue
+
+            if entry["level"] == "WARNING" and allow_warnings:
+                continue
+
+            errors.append(entry)
 
         return errors
 
