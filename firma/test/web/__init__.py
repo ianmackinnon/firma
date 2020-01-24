@@ -110,6 +110,7 @@ def pytest_addoption(parser):
     parser.addoption("--profile", action="store_true")
     parser.addoption("--server-retry", action="store_true")
     parser.addoption("--hide-header", action="store_true")
+    parser.addoption("--devtools", action="store_true")
     parser.addoption("--show-browser", action="store_true")
     parser.addoption("--keep-browser", action="store_true")
     parser.addoption("--keep-browser-always", action="store_true")
@@ -441,6 +442,9 @@ def get_chrome_options(request):
             request.config.option.keep_browser_always
     ):
         options["show"] = True
+
+    if request.config.option.devtools:
+        options["devtools"] = True
 
     return options
 

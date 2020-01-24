@@ -78,7 +78,10 @@ class SeleniumDriver():
     def get_driver(
             cls,
             chromedriver_path=None,
-            show=None, geometry=None, socks5_proxy=None
+            show=None,
+            devtools=None,
+            geometry=None,
+            socks5_proxy=None
     ):
 
         if chromedriver_path is None:
@@ -86,13 +89,14 @@ class SeleniumDriver():
 
         chrome_options = Options()
 
-        chrome_options.add_argument('--auto-open-devtools-for-tabs')
+        if devtools:
+            chrome_options.add_argument('--auto-open-devtools-for-tabs')
+
         if not show:
             chrome_options.add_argument("--headless")
 
         if socks5_proxy:
             chrome_options.add_argument(f"--proxy-server=socks5://{socks5_proxy}")
-
 
         driver = webdriver.Chrome(
             options=chrome_options,
@@ -110,6 +114,7 @@ class SeleniumDriver():
         driver._EXTRA_PDF_WARNING = False
 
         driver._show = show
+        driver._devtools = devtools
 
         return driver
 
@@ -121,6 +126,7 @@ class SeleniumDriver():
             default_timeout=None,
             chromedriver_path=None,
             show=None,
+            devtools=None,
             geometry=None,
             socks5_proxy=None
     ):
@@ -132,10 +138,14 @@ class SeleniumDriver():
         if driver is None:
             driver = SeleniumDriver.get_driver(
                 chromedriver_path,
-                show=show, geometry=geometry, socks5_proxy=socks5_proxy
+                show=show,
+                devtools=devtools,
+                geometry=geometry,
+                socks5_proxy=socks5_proxy
             )
 
         self._driver = driver
+        self._issue_iframe_warning = self.iframe_unstable()
 
         self._default_timeout = default_timeout
         self.set_and_verify_implicit_timeout(self._default_timeout)
@@ -149,9 +159,20 @@ class SeleniumDriver():
 
 
     def __getattr__(self, name):
-        if name == "switch_to" and self._show:
-            LOG.warning("Warning: Switching to an iframe is unstable when browser is visible.")
+        try:
+            self.__getattribute__(name)
+        except AttributeError:
+            pass
+
+        if name == "switch_to" and self._issue_iframe_warning:
+            LOG.warning("Warning: Switching to an iframe is unstable when browser is visible and developer tools is open.")
+            self._issue_iframe_warning = False
+
         return getattr(self._driver, name)
+
+
+    def iframe_unstable(self):
+        return self._driver._show and self._driver._devtools
 
 
     def get_timeout(self, key):
@@ -388,21 +409,25 @@ return jQuery(arguments[0]).contents().filter(function() {
     def javascript_errors(
             self,
             host: Union[Iterable[str], str, None] = None,
-            host_ignore: Union[Iterable[str], str, None] = None,
+            ignore: Union[Iterable[str], str, None] = None,
             allow_warnings: Union[bool, None] = None
     ):
         host_list = [host] if isinstance(host, str) else host
-        host_ignore_list = [host_ignore] if isinstance(host_ignore, str) else host_ignore
+        ignore_list = ignore if isinstance(ignore, (set, list, dict)) else [ignore]
 
-        def ignore(entry):
-            for third_party in host_ignore_list or []:
-                if third_party in entry["message"]:
-                    return True
+        def is_ignored(entry):
+            for item in ignore_list or []:
+                if isinstance(item, re.Pattern):
+                    if bool(item.search(entry["message"])):
+                        return True
+                else:
+                    if item in entry["message"]:
+                        return True
             return False
 
         errors = []
-        for entry in self.get_log("browser"):
-            if ignore(entry):
+        for i, entry in enumerate(self.get_log("browser")):
+            if is_ignored(entry):
                 continue
 
             if entry["level"] == "SEVERE":
