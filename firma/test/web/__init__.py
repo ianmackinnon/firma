@@ -33,6 +33,7 @@ from requests.packages.urllib3.util.retry import Retry
 from onetimepass import get_totp
 
 import pytest
+import jsonschema
 
 from firma.browser import SeleniumDriver
 
@@ -164,6 +165,10 @@ def pytest_runtestloop(session):
 def pytest_runtest_makereport(item, call):
     outcome = yield
     report = outcome.get_result()
+
+    if item.name == "test_server_status" and report.outcome != "passed":
+        raise pytest.UsageError("Server status failed. Aborting tests.")
+
     setattr(item, "report_" + report.when, report)
     return report
 
@@ -172,6 +177,9 @@ def pytest_runtest_makereport(item, call):
 def pytest_runtest_logstart(nodeid, location):
     global DURATION
     DURATION[nodeid] = time.time()
+
+
+
 
 
 
@@ -191,13 +199,17 @@ def pytest_report_teststatus(report, config):
 
 
 def pytest_collection_modifyitems(session, config, items):
-    # Make sure server status test gets called first so HTTP tests
-    # are skipped if the server is not available.
+    # Run server status test before other HTTP tests
+    #
+    # Run unit tests before other HTTP tsts
     #
     # Run fast API tests before slow Selenium tests
 
+    print(items[0].module.__name__)
+
     items.sort(key=(lambda item: (
         "server_status" not in item.name,
+        "unit" not in item.module.__name__,
         "selenium" in item.fixturenames
     )))
 
@@ -540,3 +552,28 @@ def parametrize_dict(value_name, param_dict, **pd_kwargs):
 
 
 pytest.mark.parametrize_dict = parametrize_dict
+
+
+
+def factory_test_server_status(request, base_url, get_json):
+    def f():
+        server_retry = request.config.getoption("--server-retry")
+        url = f"{base_url}/server-status"
+        data = get_json(url, retry=server_retry, timeout=1)
+
+        jsonschema.validate(data, {
+            "type": "object",
+            "required": [
+                "label",
+                "response",
+                "duration",
+            ],
+        })
+
+    return f
+
+
+
+
+def test_server_status(request, base_url, get_json):
+    factory_test_server_status(request, base_url, get_json)()

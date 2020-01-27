@@ -38,6 +38,7 @@ setuptools.setup(
         "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
     ],
     install_requires=[
+        "jsonschema",
         "onetimepass",
         "pymysql",
         "pytest",
