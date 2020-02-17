@@ -846,7 +846,7 @@ var firma = (function () {
       }
 
       if (!_.isObject(state)) {
-        throw new Error("Parameter `state` of `firma.updateState` must be an object.");
+        throw new Error("Parameter `state` of `firma.setAuxState` must be an object.");
       }
 
       var keyAux = key + "-aux";
