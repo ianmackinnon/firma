@@ -35,7 +35,8 @@ from onetimepass import get_totp
 import pytest
 import jsonschema
 
-from firma.browser import SeleniumDriver
+from firma.browser import \
+    SeleniumDriver
 
 
 
@@ -56,8 +57,9 @@ DURATION_LOG = None
 class HttpConnectionError(Exception):
     def __init__(self, message, url, *args, **kwargs):
         super().__init__(message, *args, **kwargs)
-        LOG.error("Host unreachable: %s", url)
-        pytest.exit("Host unreachable")
+        LOG.error(url)
+        LOG.error(message)
+        pytest.exit()
 
 
 
@@ -162,11 +164,18 @@ def pytest_runtestloop(session):
 
 
 @pytest.hookimpl(hookwrapper=True, tryfirst=True)
-def pytest_runtest_makereport(item, call):
+def pytest_runtest_makereport(
+        item, call
+):  # pylint: disable=unused-argument
+    """
+    If `test_server_status` failed, abandon all other tests.
+    """
+
     outcome = yield
     report = outcome.get_result()
 
     if item.name == "test_server_status" and report.outcome != "passed":
+        LOG.error(report.longrepr)
         raise pytest.UsageError("Server status failed. Aborting tests.")
 
     setattr(item, "report_" + report.when, report)
@@ -174,10 +183,11 @@ def pytest_runtest_makereport(item, call):
 
 
 
-def pytest_runtest_logstart(nodeid, location):
+def pytest_runtest_logstart(
+        nodeid, location
+):  # pylint: disable=unused-argument
     global DURATION
     DURATION[nodeid] = time.time()
-
 
 
 
@@ -198,14 +208,15 @@ def pytest_report_teststatus(report, config):
 
 
 
-def pytest_collection_modifyitems(session, config, items):
+def pytest_collection_modifyitems(
+        session, config, items  # pylint: disable=unused-argument
+):
+
     # Run server status test before other HTTP tests
     #
     # Run unit tests before other HTTP tsts
     #
     # Run fast API tests before slow Selenium tests
-
-    print(items[0].module.__name__)
 
     items.sort(key=(lambda item: (
         "server_status" not in item.name,
@@ -222,7 +233,9 @@ def base_url(request):
 
 
 @pytest.fixture(scope="session")
-def sensitive_url(request, base_url):
+def sensitive_url(
+        request, base_url  # pylint: disable=unused-argument
+):
     return False
 
 
@@ -241,7 +254,7 @@ def credentials(request):
 
 
 
-def request_kwargs_dev(url, ptreq=None, **kwargs):
+def request_kwargs_ssl_proxy(url, pytest_request=None, **kwargs):
     if kwargs is None:
         kwargs = {}
     else:
@@ -249,8 +262,8 @@ def request_kwargs_dev(url, ptreq=None, **kwargs):
 
     kwargs["allow_redirects"] = False
 
-    if ptreq and hasattr(ptreq.config.option, "ssl_cert_lookup"):
-        for item in ptreq.config.option.ssl_cert_lookup:
+    if pytest_request and hasattr(pytest_request.config.option, "ssl_cert_lookup"):
+        for item in pytest_request.config.option.ssl_cert_lookup:
             if item["regex"].search(url):
                 kwargs["verify"] = str(item["path"])
                 break
@@ -260,8 +273,8 @@ def request_kwargs_dev(url, ptreq=None, **kwargs):
         kwargs.pop("verify", None)
 
 
-    if ptreq and hasattr(ptreq.config.option, "socks5_proxy"):
-        proxy = ptreq.config.option.socks5_proxy
+    if pytest_request and hasattr(pytest_request.config.option, "socks5_proxy"):
+        proxy = pytest_request.config.option.socks5_proxy
 
         if proxy:
             kwargs["proxies"] = {
@@ -273,15 +286,18 @@ def request_kwargs_dev(url, ptreq=None, **kwargs):
     else:
         kwargs.pop("proxies", None)
 
+
     return kwargs
 
 
 
 def _http_request(
         url,
-        retry=False, timeout=None, profile=False, ptreq=None, redirect=True,
+        retry=False, timeout=None, profile=False,
+        pytest_request=None, redirect=True,
         **kwargs
 ):
+
     session = requests.Session()
 
     if retry:
@@ -307,7 +323,8 @@ def _http_request(
         # for the initial request, but default certificates for the
         # redirect location, so we must handle redirection ourselves.
 
-        k2 = request_kwargs_dev(url, ptreq=ptreq, **kwargs)
+        k2 = request_kwargs_ssl_proxy(
+            url, pytest_request=pytest_request, **kwargs)
         try:
             response = session.get(url, **k2)
         except (
@@ -343,7 +360,9 @@ def http_request():
 
 
 @pytest.fixture(scope="session")
-def get_json_params_hook(request):
+def get_json_params_hook(
+        request  # pylint: disable=unused-argument
+):
     """
     Overload this to transform parameters before passing to Requests.
     """
@@ -358,6 +377,8 @@ def get_json_params_hook(request):
 def get_json(request, http_request, get_json_params_hook):
     """
     Used to get a successful JSON response from an application resource
+
+    `request` here is the pytest `request` fixture.
     """
 
     def f(url, retry=False, timeout=None, assert_status_code=None, **kwargs):
@@ -371,13 +392,13 @@ def get_json(request, http_request, get_json_params_hook):
             url,
             retry=retry, timeout=timeout,
             profile=request.config.option.profile,
-            ptreq=request,
+            pytest_request=request,
             **kwargs
         )
 
         if assert_status_code is not None:
             assert response.status_code == assert_status_code
-            return
+            return None
 
         try:
             data = response.json()
@@ -394,7 +415,9 @@ def get_json(request, http_request, get_json_params_hook):
 
 
 @pytest.fixture(scope="session")
-def selenium_url_hook(request):
+def selenium_url_hook(
+        request  # pylint: disable=unused-argument
+):
     "Overload this to transform URLs before passing to Selenium"
 
     def transform(url):

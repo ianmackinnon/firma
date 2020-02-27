@@ -35,7 +35,9 @@ from firma.pdf import write_compressed_pdf, write_header_pdf, write_headed_pdf, 
 
 LOG = logging.getLogger("firma.browser")
 
-DEFAULT_CHROMEDRIVER_PATH = "/usr/lib/chromium-browser/chromedriver"
+DEFAULT_CHROMEDRIVER_PATH_UBUNTU = "/usr/lib/chromium-browser/chromedriver"
+DEFAULT_CHROMEDRIVER_PATH_DEBIAN = "/usr/bin/chromedriver"
+DEFAULT_CHROMEDRIVER_PATH = DEFAULT_CHROMEDRIVER_PATH_DEBIAN
 DEFAULT_TIMEOUT = 15
 
 
