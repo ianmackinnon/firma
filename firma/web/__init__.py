@@ -191,6 +191,9 @@ class Application(tornado.web.Application):
         define("public_origin", default=None,
                help="Public origin (protocol, hostname and port)")
 
+        define("color", default=None,
+               help="Force color format. Options are `ansi`.")
+
         define("ssl_cert", default=None, help="SSL certificate path")
         define("ssl_key", default=None, help="SSL private key path")
 
@@ -519,6 +522,17 @@ class Application(tornado.web.Application):
 
         self.settings = Settings(settings or {})
         self.init_settings(options)
+
+        if self.settings.options.color == "ansi":
+            root_handler = app_log.parent.handlers[0]
+            formatter = root_handler.formatter
+            formatter._colors = {
+                10: '\x1b[34m',
+                20: '\x1b[32m',
+                30: '\x1b[33m',
+                40: '\x1b[31m'
+            }
+            formatter._normal = "\033[0m"
 
         self.init_log(options, "uri", propagate=False, level=logging.INFO)
         self.init_log(options, "tornado")
