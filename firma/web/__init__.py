@@ -477,8 +477,11 @@ class Application(tornado.web.Application):
 
                     app_log.info("Rebuilding `%s`", target)
 
+                    kwargs = manifest.get("kwargs", None)
+
                     if "cmd" in manifest:
-                        cmd = manifest["cmd"](target, manifest.get("deps", None))
+                        cmd = manifest["cmd"](
+                            target, manifest.get("deps", None), **kwargs)
 
                         return_code = run(cmd)
                         if return_code != 0:
@@ -486,7 +489,7 @@ class Application(tornado.web.Application):
                                 "Required resource dependency %s could not be built, "
                                 "return code %d." % (target_path, return_code))
                     else:
-                        manifest["f"](target, manifest.get("deps", None))
+                        manifest["f"](target, manifest.get("deps", None), **kwargs)
 
         build(target)
 
