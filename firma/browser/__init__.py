@@ -448,6 +448,19 @@ return jQuery(arguments[0]).contents().filter(function() {
         return errors
 
 
+    def javascript_errors_clear(self, required=True):
+        """
+        Getting the log seems to clear it.
+
+        Call this function after errors are expected to have been generated.
+        """
+
+        count = self.get_log("browser")
+        if required:
+            assert count
+        assert not self.get_log("browser")
+
+
     def wait_until(self, f, wait=None):
         if wait is None:
             wait = self._default_timeout
