@@ -422,7 +422,7 @@ class Application(tornado.web.Application):
 
     # Minify
 
-    def minify_build(self, deps, cwd, static_path, target):
+    def minify_build(self, deps, cwd, static_path, target, cmd_kwargs):
 
         def run(cmd):
             proc = Popen(cmd, cwd=cwd, stdout=PIPE, stderr=PIPE)
@@ -477,8 +477,11 @@ class Application(tornado.web.Application):
 
                     app_log.info("Rebuilding `%s`", target)
 
+                    kwargs = manifest.get("kwargs", None)
+
                     if "cmd" in manifest:
-                        cmd = manifest["cmd"](target, manifest.get("deps", None))
+                        cmd = manifest["cmd"](
+                            target, manifest.get("deps", None), **kwargs)
 
                         return_code = run(cmd)
                         if return_code != 0:
@@ -486,13 +489,13 @@ class Application(tornado.web.Application):
                                 "Required resource dependency %s could not be built, "
                                 "return code %d." % (target_path, return_code))
                     else:
-                        manifest["f"](target, manifest.get("deps", None))
+                        manifest["f"](target, manifest.get("deps", None), **kwargs)
 
         build(target)
 
 
-    def minify_path(self, deps, cwd, static_path, target):
-        self.minify_build(deps, cwd, static_path, target)
+    def minify_path(self, deps, cwd, static_path, target, cmd_kwargs):
+        self.minify_build(deps, cwd, static_path, target, cmd_kwargs)
         resource_hash = self.sha1_hex((static_path / target).read_text())
         return f"{str(target)}?v={resource_hash[:7]}"
 
