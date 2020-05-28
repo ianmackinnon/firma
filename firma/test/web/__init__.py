@@ -59,7 +59,7 @@ class HttpConnectionError(Exception):
         super().__init__(message, *args, **kwargs)
         LOG.error(url)
         LOG.error(message)
-        pytest.exit()
+        pytest.exit(message)
 
 
 
@@ -317,6 +317,8 @@ def _http_request(
     if timeout is not None:
         kwargs["timeout"] = timeout
 
+    history = []
+
     while True:
         # `requests` only allows a single certificate to be supplied.
         # For requests to the dev server we need to use a custom certificate
@@ -345,9 +347,12 @@ def _http_request(
                 location = urllib.parse.urljoin(url, location)
             url = location
             LOG.debug(f"Redirecting to {url}")
+            history.append(response)
             continue
 
         break
+
+    response.history = history
 
     return response
 
