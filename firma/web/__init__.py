@@ -106,7 +106,7 @@ class HttpRedirectException(tornado.web.HTTPError):
     Paths should include calling host URL root if there is one.
     """
 
-    def __init__(self, location, permanent=False):
+    def __init__(self, location, permanent=None):
         status_code = 301 if permanent else 302
         self.location = location
         super().__init__(status_code)
