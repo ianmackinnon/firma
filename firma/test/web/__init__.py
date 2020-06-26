@@ -110,6 +110,7 @@ def pytest_addoption(parser):
     parser.addoption("--base-url", action="store")
     parser.addoption("--driver", action="store")
     parser.addoption("--driver-path", action="store")
+    parser.addoption("--driver-timeout", action="store", type=float, default=5)
     parser.addoption("--profile", action="store_true")
     parser.addoption("--server-retry", action="store_true")
     parser.addoption("--hide-header", action="store_true")
@@ -472,7 +473,7 @@ def selenium_function(request, selenium_url_hook):
 def get_chrome_options(request):
     options = {
         "socks5_proxy": request.config.option.socks5_proxy,
-        "default_timeout": request.config.option.default_timeout,
+        "default_timeout": request.config.option.driver_timeout,
         "geometry": request.config.option.geometry,
     }
 
