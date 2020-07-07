@@ -229,6 +229,8 @@ def pytest_collection_modifyitems(
 
 @pytest.fixture(scope="session")
 def base_url(request):
+    if request.config.option.base_url.endswith("/"):
+        pytest.fail("Option `base_url` may not end in a slash")
     return request.config.option.base_url
 
 
@@ -388,7 +390,6 @@ def get_json(request, http_request, get_json_params_hook):
     """
 
     def f(url, retry=False, timeout=None, assert_status_code=None, **kwargs):
-
         kwargs["params"] = get_json_params_hook(kwargs.get("params", None))
 
         if request.config.option.profile:
@@ -474,6 +475,7 @@ def get_chrome_options(request):
     options = {
         "socks5_proxy": request.config.option.socks5_proxy,
         "default_timeout": request.config.option.driver_timeout,
+        "chromedriver_path": request.config.option.driver_path,
         "geometry": request.config.option.geometry,
     }
 
@@ -587,6 +589,7 @@ pytest.mark.parametrize_dict = parametrize_dict
 def factory_test_server_status(request, base_url, get_json):
     def f():
         server_retry = request.config.getoption("--server-retry")
+
         url = f"{base_url}/server-status"
         data = get_json(url, retry=server_retry, timeout=1)
 

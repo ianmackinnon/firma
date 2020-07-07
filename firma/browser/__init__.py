@@ -36,8 +36,9 @@ from firma.pdf import write_compressed_pdf, write_header_pdf, write_headed_pdf, 
 LOG = logging.getLogger("firma.browser")
 
 DEFAULT_CHROMEDRIVER_PATH_UBUNTU = "/usr/lib/chromium-browser/chromedriver"
+DEFAULT_CHROMEDRIVER_PATH_SNAP = "/snap/bin/chromium.chromedriver"
 DEFAULT_CHROMEDRIVER_PATH_DEBIAN = "/usr/bin/chromedriver"
-DEFAULT_CHROMEDRIVER_PATH = DEFAULT_CHROMEDRIVER_PATH_DEBIAN
+DEFAULT_CHROMEDRIVER_PATH = DEFAULT_CHROMEDRIVER_PATH_UBUNTU
 DEFAULT_TIMEOUT = 15
 
 
@@ -396,6 +397,10 @@ return jQuery(arguments[0]).contents().filter(function() {
         """
 
         fail_message = None
+
+        # URLs in Chrome errors are not plus encoded.
+        url = url.replace("+", "%20")
+
         for entry in self.get_log("browser"):
             if (
                     entry["level"] == "SEVERE" and
