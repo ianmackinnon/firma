@@ -22,6 +22,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from contextlib import contextmanager
 
+import sqlparse
 from unidecode import unidecode
 
 
@@ -68,6 +69,11 @@ def format_whitespace(
 
     return re_whitespace.sub(" ", text).strip()
 
+
+
+def format_sql(text) -> str:
+    text = str(text)
+    return sqlparse.format(text, reindent=True)
 
 
 # Logging

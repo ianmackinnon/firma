@@ -47,6 +47,7 @@ setuptools.setup(
         "requests",
         "selenium",
         "sqlalchemy",
+        "sqlparse",
         "tornado",
         "unidecode",
     ],
