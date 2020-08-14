@@ -24,6 +24,7 @@ import requests
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.common.exceptions import \
@@ -101,9 +102,15 @@ class SeleniumDriver():
         if socks5_proxy:
             chrome_options.add_argument(f"--proxy-server=socks5://{socks5_proxy}")
 
+        caps = DesiredCapabilities.CHROME
+        caps["goog:loggingPrefs"] = {
+            "browser": "ALL",
+        }
+
         driver = webdriver.Chrome(
             options=chrome_options,
             executable_path=chromedriver_path,
+            desired_capabilities=caps,
         )
 
         if geometry is not None:
@@ -413,6 +420,17 @@ return jQuery(arguments[0]).contents().filter(function() {
         assert fail_message
 
 
+    def javascript_log(self):
+        def format_message(text):
+            return text.split(" ", 2)[2]
+
+        return [
+            format_message(v["message"])
+            for v in self.get_log("browser")
+            if v["source"] == "console-api"
+        ]
+
+
     def javascript_errors(
             self,
             host: Union[Iterable[str], str, None] = None,
@@ -423,6 +441,9 @@ return jQuery(arguments[0]).contents().filter(function() {
         ignore_list = ignore if isinstance(ignore, (set, list, dict)) else [ignore]
 
         def is_ignored(entry):
+            if entry["source"] == "console-api":
+                return True
+
             for item in ignore_list or []:
                 if isinstance(item, re.Pattern):
                     if bool(item.search(entry["message"])):
