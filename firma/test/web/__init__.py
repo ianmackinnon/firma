@@ -472,6 +472,9 @@ def selenium_function(request, selenium_url_hook):
 
 
 def get_chrome_options(request):
+    if "default_timeout" in request.config.option:
+        raise Exception("Config option `default_timeout` is deprecated. Use `driver_timeout` instead.")
+
     options = {
         "socks5_proxy": request.config.option.socks5_proxy,
         "default_timeout": request.config.option.driver_timeout,
