@@ -742,7 +742,7 @@ var firma = (function () {
         reload: false
       }, options);
 
-      if (resource === currentResource) {
+      if (resource === currentResource && !options.hard) {
         if (options.reload) {
           options.replace = true;
         } else {
@@ -754,9 +754,12 @@ var firma = (function () {
 
       if (options.replace) {
         window.history.replaceState(null, null, url);
-      } else {
-        window.history.pushState({}, null, url);
+      } else if (options.hard) {
+        window.location = url;
+        return;
       }
+
+      window.history.pushState({}, null, url);
 
       if (options.trigger && _.isFunction(options.onTrigger)) {
         options.onTrigger();
