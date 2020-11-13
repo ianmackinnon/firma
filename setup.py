@@ -39,6 +39,7 @@ setuptools.setup(
     ],
     install_requires=[
         "jsonschema",
+        "humanize",
         "onetimepass",
         "pymysql",
         "pytest",

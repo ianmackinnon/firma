@@ -12,7 +12,6 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import re
-import os
 import sys
 import getpass
 import logging
@@ -23,6 +22,7 @@ from collections import namedtuple
 import pymysql
 from sqlalchemy import event
 
+from firma.util import load_conf
 
 
 LOG = logging.getLogger('mysql')
@@ -67,20 +67,6 @@ def split(text):
         if value:
             values.append(value)
     return values
-
-
-
-def load_conf(path):
-    # pylint: disable=protected-access
-    # Storing config path in protected variable
-
-    if not os.path.isfile(path):
-        LOG.error("%s: File not found", path)
-        sys.exit(1)
-    config = configparser.ConfigParser()
-    config.read(path)
-    config._load_path = path
-    return config
 
 
 
