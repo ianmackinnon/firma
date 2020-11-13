@@ -18,7 +18,7 @@ from firma.util import load_conf
 
 DEFAULT_API_ROOT = "http://localhost:9200"
 CHUNK_SIZE_DOCS = 2**8
-
+MIME_NEWLINE_DELIMITED_JSON = "application/x-ndjson"
 
 
 JsonObject = Union[dict, list, str, float, int, bool, None]
@@ -120,27 +120,6 @@ class Es():
         self._bulk_buffer = []
 
 
-    @property
-    def index_endpoint(self):
-        return self.api_root + "/" + self.index_name
-
-
-    def refresh(self, index=None):
-        if index is None:
-            index = self.index_name
-
-        url = self.api_root
-        if self.index_name is not None:
-            url += "/" + self.index_name
-        url += "/_refresh"
-
-        response = requests.post(url)
-        if response.status_code != 200:
-            LOG.error(query_error(response))
-            raise EsException("Failed to refresh ES node.")
-        LOG.debug("OK")
-
-
     def _calc_index_name(
             self,
             index_name: [str, None, Default] = Default.INDEX_NAME,
@@ -190,6 +169,22 @@ class Es():
         return definition
 
 
+    def refresh(
+            self,
+            index_name: [str, None, Default] = Default.INDEX_NAME,
+    ) -> None:
+
+        index_name = self._calc_index_name(index_name)
+
+        url = self._calc_url(index_name) + "/_refresh"
+
+        response = requests.post(url)
+        if response.status_code != 200:
+            LOG.error(query_error(response))
+            raise EsException("Failed to refresh ES node.")
+        LOG.debug("OK")
+
+
     def count(
             self,
             index_name: [str, None, Default] = Default.INDEX_NAME,
@@ -201,8 +196,6 @@ class Es():
             raise EsException("Failed to count documents.", response=response)
 
         result = response.json()
-
-        print(result)
 
         return result["count"]
 
@@ -378,14 +371,14 @@ class Es():
         if index_name is not None:
             index_name = self._calc_index_name(index_name)
             if index_name:
-                action_data["_index"] = index_name
+                action_data["index"]["_index"] = index_name
 
         if id_ is not None:
-                action_data["_id"] = id_
+                action_data["index"]["_id"] = id_
 
         self._bulk_buffer += [action_data, document]
 
-        if auto and len(self._bulk_buffer) > CHUNK_SIZE_DOCS:
+        if auto and len(self._bulk_buffer) >= CHUNK_SIZE_DOCS:
             self.bulk()
 
 
@@ -394,6 +387,9 @@ class Es():
             self,
             index_name: [str, None, Default] = Default.INDEX_NAME,
     ) -> JsonObject:
+
+        if not self._bulk_buffer:
+            return
 
         index_name = self._calc_index_name(index_name)
         url = self._calc_url(index_name) + "/_bulk"
@@ -407,7 +403,7 @@ class Es():
             "ES bulk insert of %d records, ~%s bytes",
             payload_length_doc, humanize.naturalsize(payload_length_mem, binary=True))
         response = requests.post(url, data=payload, headers={
-            "content-type": "application/x-ndjson"
+            "content-type": MIME_NEWLINE_DELIMITED_JSON,
         })
         if response.status_code != 200:
             LOG.error(query_error(response))
