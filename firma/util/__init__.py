@@ -17,6 +17,7 @@ import sys
 import shutil
 import logging
 import traceback
+import configparser
 from typing import Union
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -74,6 +75,7 @@ def format_whitespace(
 def format_sql(text) -> str:
     text = str(text)
     return sqlparse.format(text, reindent=True)
+
 
 
 # Logging
@@ -149,6 +151,32 @@ def init_logs(*logs, args=None):
         log.addHandler(logging.StreamHandler())
         log.setLevel(level)
         color_log(log)
+
+
+
+# Configuration
+
+
+
+def load_conf(path: Union[Path, str]) -> configparser.ConfigParser:
+    # pylint: disable=protected-access
+    # Storing config path in protected variable
+
+    if not isinstance(path, Path):
+        path = Path(path)
+
+    if not path.is_file():
+        LOG.error("%s: File not found", str(path))
+        sys.exit(1)
+
+    config = configparser.ConfigParser()
+    config.read(str(path))
+    config._load_path = str(path)
+    return config
+
+
+
+# IO
 
 
 
