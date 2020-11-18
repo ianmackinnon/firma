@@ -131,7 +131,8 @@ class Es():
 
         if index_name is Default.INDEX_NAME:
             index_name = self.index_name
-        elif (
+
+        if (
                 index_name and self.index_prefix and
                 not index_name.startswith(self.index_prefix + "-")
         ):
@@ -175,7 +176,6 @@ class Es():
     ) -> None:
 
         index_name = self._calc_index_name(index_name)
-
         url = self._calc_url(index_name) + "/_refresh"
 
         response = requests.post(url)
@@ -200,15 +200,14 @@ class Es():
         return result["count"]
 
 
-    def search(self, query, index=None):
+    def search(
+            self,
+            query,
+            index_name: [str, None, Default] = Default.INDEX_NAME,
+    ):
 
-        if index is None:
-            index = self.index_name
-
-        url = self.api_root
-        if index is not None:
-            url += "/" + index
-        url += "/_search"
+        index_name = self._calc_index_name(index_name)
+        url = self._calc_url(index_name) + "/_search"
 
         response = requests.post(url, json=query)
         if response.status_code != 200:
@@ -221,6 +220,7 @@ class Es():
 
 
     def document(self, document_id, index=None):
+        raise NotImplementedError()
 
         if index is None:
             index = self.index_name
@@ -320,6 +320,7 @@ class Es():
             index=None,
             id_=None
     ) -> None:
+        raise NotImplementedError()
         if index is None:
             index = self.index_name
 
