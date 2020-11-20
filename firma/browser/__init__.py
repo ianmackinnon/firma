@@ -438,13 +438,17 @@ return jQuery(arguments[0]).contents().filter(function() {
             allow_warnings: Union[bool, None] = None
     ):
         host_list = [host] if isinstance(host, str) else host
-        ignore_list = ignore if isinstance(ignore, (set, list, dict)) else [ignore]
+        ignore_set = (
+            set(ignore) if isinstance(ignore, (set, list, dict)) else
+            set([ignore]) if ignore else
+            set())
+
 
         def is_ignored(entry):
             if entry["source"] == "console-api":
                 return True
 
-            for item in ignore_list or []:
+            for item in ignore_set:
                 if isinstance(item, re.Pattern):
                     if bool(item.search(entry["message"])):
                         return True
@@ -452,6 +456,7 @@ return jQuery(arguments[0]).contents().filter(function() {
                     if item in entry["message"]:
                         return True
             return False
+
 
         errors = []
         for i, entry in enumerate(self.get_log("browser")):
