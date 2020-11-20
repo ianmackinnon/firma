@@ -127,16 +127,19 @@ class Es():
         """
         Calculate the index name for member functions.
         It may still be none
+
+        Index name may be a comma separated string.
         """
 
         if index_name is Default.INDEX_NAME:
             index_name = self.index_name
 
-        if (
-                index_name and self.index_prefix and
-                not index_name.startswith(self.index_prefix + "-")
-        ):
-            index_name = self.index_prefix + "-" + index_name
+        if index_name and self.index_prefix:
+            index_name = ",".join([
+                self.index_prefix + "-" + v
+                for v in index_name.split(",")
+                if not v.startswith(self.index_prefix + "-")
+            ])
 
         return index_name
 
@@ -348,7 +351,6 @@ class Es():
 
         response = requests.get(url)
         if response.status_code != 200:
-            print(response.json())
             raise EsException("Failed to retrieve mapping.", response=response)
 
         result = response.json()
