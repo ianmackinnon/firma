@@ -136,9 +136,9 @@ class Es():
 
         if index_name and self.index_prefix:
             index_name = ",".join([
-                self.index_prefix + "-" + v
+                v if v.startswith(self.index_prefix + "-")
+                else self.index_prefix + "-" + v
                 for v in index_name.split(",")
-                if not v.startswith(self.index_prefix + "-")
             ])
 
         return index_name
