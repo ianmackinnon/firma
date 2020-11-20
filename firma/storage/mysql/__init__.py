@@ -16,6 +16,7 @@ import sys
 import getpass
 import logging
 import configparser
+from pathlib import Path
 from hashlib import sha1
 from collections import namedtuple
 
@@ -139,8 +140,8 @@ def load_database_names(conf):
     # pylint: disable=protected-access
     # Storing file path in config object.
 
-    if isinstance(conf, str):
-        config = load_conf(conf)
+    if isinstance(conf, (str, Path)):
+        config = load_conf(str(conf))
     else:
         assert isinstance(conf, configparser.ConfigParser)
         config = conf
