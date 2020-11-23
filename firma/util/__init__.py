@@ -72,6 +72,58 @@ def format_whitespace(
 
 
 
+def format_commas(i):
+    if i is None:
+        return None
+    s = str(int(i))
+    o = str()
+    while len(s) > 3:
+        o = ',' + s[-3:] + o
+        s = s[:-3]
+    return s + o
+
+
+
+def format_abbreviate(i):
+    if i is None:
+        return None
+
+    i = float(i)
+
+    if i >= 1e10:
+        return u"%0.0fbn" % (i / 1e9)
+    if i >= 1e10 - 5e7:
+        return u"%0.0fbn" % ((i + 5e7) / 1e9)
+
+    if i >= 1e9:
+        return u"%0.1fbn" % (i / 1e9)
+    if i >= 1e9 - 5e5:
+        return u"%0.1fbn" % ((i + 5e5) / 1e9)
+
+    if i >= 1e7:
+        return u"%0.0fm" % (i / 1e6)
+    if i >= 1e7 - 5e4:
+        return u"%0.0fm" % ((i + 5e4) / 1e6)
+
+    if i >= 1e6:
+        return u"%0.1fm" % ((i) / 1e6)
+    if i >= 1e6 - 5e2:
+        return u"%0.1fm" % ((i + 5e2) / 1e6)
+
+    if i >= 1e4:
+        return u"%0.0fk" % (i / 1e3)
+    if i >= 1e4 - 5:
+        return u"%0.0fk" % ((i + 5) / 1e3)
+
+    if i >= 1e3:
+        return u"%0.1fk" % (i / 1e3)
+    if i >= 1e3 - .5:
+        return u"%0.1fk" % ((i + .5) / 1e3)
+
+    return u"%d" % i
+
+
+
 def format_sql(text) -> str:
     text = str(text)
     return sqlparse.format(text, reindent=True)
