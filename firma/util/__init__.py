@@ -90,35 +90,24 @@ def format_abbreviate(i):
 
     i = float(i)
 
-    if i >= 1e10:
-        return u"%0.0fbn" % (i / 1e9)
-    if i >= 1e10 - 5e7:
-        return u"%0.0fbn" % ((i + 5e7) / 1e9)
+    def e(a, b):
+        return a * 10 ** b
 
-    if i >= 1e9:
-        return u"%0.1fbn" % (i / 1e9)
-    if i >= 1e9 - 5e5:
-        return u"%0.1fbn" % ((i + 5e5) / 1e9)
+    for (abbr, n) in (
+            ("tn", 12),
+            ("bn", 9),
+            ("m", 6),
+            ("k", 3),
+    ):
 
-    if i >= 1e7:
-        return u"%0.0fm" % (i / 1e6)
-    if i >= 1e7 - 5e4:
-        return u"%0.0fm" % ((i + 5e4) / 1e6)
-
-    if i >= 1e6:
-        return u"%0.1fm" % ((i) / 1e6)
-    if i >= 1e6 - 5e2:
-        return u"%0.1fm" % ((i + 5e2) / 1e6)
-
-    if i >= 1e4:
-        return u"%0.0fk" % (i / 1e3)
-    if i >= 1e4 - 5:
-        return u"%0.0fk" % ((i + 5) / 1e3)
-
-    if i >= 1e3:
-        return u"%0.1fk" % (i / 1e3)
-    if i >= 1e3 - .5:
-        return u"%0.1fk" % ((i + .5) / 1e3)
+        if i >= e(1, n + 1):
+            return u"%0.0f%s" % (i / e(1, n), abbr)
+        if i >= e(1, n + 1) - e(5, n - 2):
+            return u"%0.0f%s" % ((i + e(5, n - 2)) / e(1, n), abbr)
+        if i >= e(1, n):
+            return u"%0.1f%s" % (i / e(1, n), abbr)
+        if i >= e(1, n) - e(5, n - 4):
+            return u"%0.1f%s" % ((i + e(5, n - 4)) / e(1, n), abbr)
 
     return u"%d" % i
 

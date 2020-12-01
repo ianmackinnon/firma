@@ -14,3 +14,22 @@ clean-packages :
 
 clean-python-cache :
 	find . -name __pycache__ -exec rm -rf {} +
+
+get-version :
+	@python3 -c "import firma; print(firma.version.__version__)"
+
+set-version :
+ifeq ($(V),)
+	@echo "Version variable \`V\` is not set." 1>&2
+	@false
+else
+	echo "__version__ = \"$(V)\"" > firma/version.py; git add firma/version.py;
+endif
+
+tag-version :
+ifeq ($(V),)
+	@echo "Version variable \`V\` is not set." 1>&2
+	@false
+else
+	git tag -m "v${V}" -a "v${V}" -f
+endif

@@ -425,6 +425,9 @@ class Application(tornado.web.Application):
     def minify_build(self, deps, cwd, static_path, target):
 
         def run(cmd):
+            # shell_cmd = " ".join([f"'{v}'" for v in cmd])
+            # app_log(shell_cmd)
+
             proc = Popen(cmd, cwd=cwd, stdout=PIPE, stderr=PIPE)
             (out, err) = proc.communicate()
             out = out.decode("utf-8")
