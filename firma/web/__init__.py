@@ -916,13 +916,13 @@ class BaseHandler(tornado.web.RequestHandler):
         Stringify as JSON. Always set secure.
         """
 
-        # Path cannot be `None`
-        if "path" in kwargs and not kwargs["path"]:
-            del kwargs["path"]
-
         kwargs = dict(list({
             "path": self.url_root
         }.items()) + list((kwargs or {}).items()))
+
+        # A falsy path will cause cookie to not match any URLs
+        if "path" in kwargs and not kwargs["path"]:
+            del kwargs["path"]
 
         key = self.cookie_name(key)
         value = json.dumps(value)
