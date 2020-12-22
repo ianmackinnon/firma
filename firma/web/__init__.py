@@ -422,11 +422,12 @@ class Application(tornado.web.Application):
 
     # Minify
 
-    def minify_build(self, deps, cwd, static_path, target):
+    def minify_build(self, deps, cwd, static_path, target, debug=None):
 
         def run(cmd):
-            # shell_cmd = " ".join([f"'{v}'" for v in cmd])
-            # app_log(shell_cmd)
+            if debug:
+                shell_cmd = " ".join([f"'{v}'" for v in cmd])
+                app_log.info(shell_cmd)
 
             proc = Popen(cmd, cwd=cwd, stdout=PIPE, stderr=PIPE)
             (out, err) = proc.communicate()
@@ -497,8 +498,8 @@ class Application(tornado.web.Application):
         build(target)
 
 
-    def minify_path(self, deps, cwd, static_path, target):
-        self.minify_build(deps, cwd, static_path, target)
+    def minify_path(self, deps, cwd, static_path, target, debug=None):
+        self.minify_build(deps, cwd, static_path, target, debug=debug)
         resource_hash = self.sha1_hex((static_path / target).read_text())
         return f"{str(target)}?v={resource_hash[:7]}"
 
