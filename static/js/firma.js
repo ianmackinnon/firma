@@ -757,9 +757,9 @@ var firma = (function () {
       } else if (options.hard) {
         window.location = url;
         return;
+      } else {
+        window.history.pushState({}, null, url);
       }
-
-      window.history.pushState({}, null, url);
 
       if (options.trigger && _.isFunction(options.onTrigger)) {
         options.onTrigger();
