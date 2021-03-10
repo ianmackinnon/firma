@@ -320,18 +320,11 @@ class Es():
 
     def delete(
             self,
-            index=None,
+            index_name: [str, None, Default] = Default.INDEX_NAME,
             id_=None
     ) -> None:
-        raise NotImplementedError()
-        if index is None:
-            index = self.index_name
-
-        url = self.api_root
-        if index is not None:
-            url += "/" + index
-
-        url += "/%s/%s" % ("_doc", str(id_))
+        index_name = self._calc_index_name(index_name)
+        url = self._calc_url(index_name) + f"/_doc/{str(id_)}"
 
         # Create a new index with our index definition
         LOG.info("deleting document.")
@@ -384,6 +377,28 @@ class Es():
         if auto and len(self._bulk_buffer) >= CHUNK_SIZE_DOCS:
             self.bulk()
 
+
+    def delete_queue(
+            self,
+            index_name: [str, None, Default] = Default.INDEX_NAME,
+            id_=None,
+            auto=True,
+    ) -> None:
+        action_data = {
+            "delete": {},
+        }
+        if index_name is not None:
+            index_name = self._calc_index_name(index_name)
+            if index_name:
+                action_data["delete"]["_index"] = index_name
+
+        if id_ is not None:
+                action_data["delete"]["_id"] = id_
+
+        self._bulk_buffer += [action_data]
+
+        if auto and len(self._bulk_buffer) >= CHUNK_SIZE_DOCS:
+            self.bulk()
 
 
     def bulk(
