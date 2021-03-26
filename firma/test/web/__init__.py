@@ -405,13 +405,13 @@ def get_json(request, http_request, get_json_params_hook):
 
         if assert_status_code is not None:
             assert response.status_code == assert_status_code
-            return None
 
         try:
             data = response.json()
         except json.decoder.JSONDecodeError:
             LOG.error("%s: response not JSON", url)
             raise
+
         return data
 
     yield f
