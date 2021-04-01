@@ -389,7 +389,11 @@ def get_json(request, http_request, get_json_params_hook):
     `request` here is the pytest `request` fixture.
     """
 
-    def f(url, retry=False, timeout=None, assert_status_code=None, **kwargs):
+    def f(
+            url,
+            retry=False, timeout=None, assert_status_code=None, ignore_result=None,
+            **kwargs
+    ):
         kwargs["params"] = get_json_params_hook(kwargs.get("params", None))
 
         if request.config.option.profile:
@@ -405,6 +409,9 @@ def get_json(request, http_request, get_json_params_hook):
 
         if assert_status_code is not None:
             assert response.status_code == assert_status_code
+
+        if ignore_result:
+            return None
 
         try:
             data = response.json()
