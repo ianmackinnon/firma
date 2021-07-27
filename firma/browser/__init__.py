@@ -129,7 +129,6 @@ class SeleniumDriver():
         return driver
 
 
-
     def __init__(
             self,
             driver=None,
@@ -138,30 +137,53 @@ class SeleniumDriver():
             show=None,
             devtools=None,
             geometry=None,
-            socks5_proxy=None
+            socks5_proxy=None,
+            on_create_callback=None,
+            on_destroy_callback=None
     ):
+        self._show = show
+        self._devtools = devtools
+        self._default_timeout = default_timeout
+        self._chromedriver_path = chromedriver_path
+        self._geometry = geometry
+        self._socks5_proxy = socks5_proxy
+        self._on_create_callback = on_create_callback
+        self._on_destroy_callback = on_destroy_callback
 
+        if self._default_timeout is None:
+            self._default_timeout = DEFAULT_TIMEOUT
 
-        if default_timeout is None:
-            default_timeout = DEFAULT_TIMEOUT
-
-        if driver is None:
-            driver = SeleniumDriver.get_driver(
-                chromedriver_path,
-                show=show,
-                devtools=devtools,
-                geometry=geometry,
-                socks5_proxy=socks5_proxy
-            )
-
-        self._driver = driver
         self._issue_iframe_warning = self.iframe_unstable()
 
-        self._default_timeout = default_timeout
+        self.start(driver)
+
+
+    def start(self, driver=None):
+        if driver:
+            self._driver = driver
+        else:
+            self._driver = SeleniumDriver.get_driver(
+                self._chromedriver_path,
+                show=self._show,
+                devtools=self._devtools,
+                geometry=self._geometry,
+                socks5_proxy=self._socks5_proxy
+            )
+            if self._on_create_callback:
+                self._on_create_callback(self)
+
         self.set_and_verify_implicit_timeout(self._default_timeout)
 
 
-    def close_if_open(self):
+    def restart(self):
+        self.destroy()
+        self.start()
+
+
+    def destroy(self):
+        if self._on_destroy_callback:
+            self._on_destroy_callback(self)
+
         try:
             self._driver.close()
         except (WebDriverException, NoSuchWindowException):
@@ -182,7 +204,7 @@ class SeleniumDriver():
 
 
     def iframe_unstable(self):
-        return self._driver._show and self._driver._devtools
+        return self._show and self._devtools
 
 
     def get_timeout(self, key):
@@ -382,7 +404,7 @@ return jQuery(arguments[0]).contents().filter(function() {
 
 
     def keep(self, timeout):
-        interval = 0.1
+        interval = 0.5
         expired = 0
 
         while True:

@@ -478,6 +478,7 @@ def selenium_function(request, selenium_url_hook):
     driver.close_if_open()
 
 
+
 def get_chrome_options(request):
     if "default_timeout" in request.config.option:
         raise Exception("Config option `default_timeout` is deprecated. Use `driver_timeout` instead.")
@@ -514,35 +515,43 @@ def generate_selenium_session_fixture(**kwargs):
 
     @pytest.fixture(scope="session")
     def fix(request, selenium_url_hook, credentials):
+
+
+        def on_create_callback(driver):
+            get_orig = driver._driver.get
+
+            def get(url, *args, **kwargs):
+                return get_orig(selenium_url_hook(url), *args, **kwargs)
+
+            driver.get = get
+
+            if "on_create_hook" in kwargs:
+                kwargs["on_create_hook"](request, driver, credentials)
+
+
+        def on_destroy_callback(driver):
+            keep = False
+
+            if request.config.getoption("--keep-browser-always"):
+                keep = True
+
+            if keep:
+                driver.keep(5)
+
+
         driver = SeleniumDriver(
-            driver=None,
+            on_create_callback=on_create_callback,
+            on_destroy_callback=on_destroy_callback,
             **get_chrome_options(request)
         )
 
         LOG.debug("Default timeout: %.3f" % driver._default_timeout)
         LOG.debug("Retry: %s" % request.config.getoption("--server-retry"))
 
-        get_orig = driver.get
-
-        def get(url, *args, **kwargs):
-            return get_orig(selenium_url_hook(url), *args, **kwargs)
-
-        driver.get = get
-
-        if "on_create_hook" in kwargs:
-            kwargs["on_create_hook"](request, driver, credentials)
-
         yield driver
 
-        keep = False
+        driver.destroy()
 
-        if request.config.getoption("--keep-browser-always"):
-            keep = True
-
-        if keep:
-            driver.keep(240)
-
-        driver.close_if_open()
 
     return fix
 
@@ -554,7 +563,6 @@ def auth_params(credentials, user_id_key):
         "password": credentials["password"],
         "token": get_totp(credentials["onetime_secret"]),
     }
-
 
 
 
@@ -573,6 +581,10 @@ def selenium(request, selenium_session):
         screenshot_path = Path("/tmp") / f"{request.node.name}.png"
         driver.save_screenshot(str(screenshot_path))
         LOG.warning("Saved screenshot at failure: `%s`", screenshot_path)
+
+    history_length = driver.execute_script("return window.history.length;")
+    if history_length > 40:
+        driver.restart()
 
 
 
