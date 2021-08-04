@@ -18,6 +18,7 @@ from firma.util import load_conf
 
 DEFAULT_API_ROOT = "http://localhost:9200"
 CHUNK_SIZE_DOCS = 2**8
+MIME_JSON = "application/json"
 MIME_NEWLINE_DELIMITED_JSON = "application/x-ndjson"
 
 
@@ -105,19 +106,66 @@ class Es():
             api_root: [str, None] = None,
             index_prefix: [str, None] = None,
             index_name: [str, None] = None,
-            dump_request=None,
-            dump_request_format=None,
-            dump_response=None,
+            request_log: [logging.Logger, None] = None,
+            request_log_format: [str, None] = None,
     ):
 
         self.api_root = api_root
         self.index_name = index_name  # Default, may be overridden in member functions
         self.index_prefix = index_prefix
 
-        if dump_request or dump_request_format or dump_response:
-            LOG.warning("ES logging functions not implemented.")
+        self.request_log = request_log
+        self.request_log_format = request_log_format
+        if self.request_log_format is None:
+            self.request_log_format = "console_req"
 
         self._bulk_buffer = []
+
+
+    def log_request(self, method, url, data=None, nd=None):
+        if not self.request_log:
+            return
+
+        if self.request_log_format in ("console", "console_req"):
+            path = url[len(self.api_root):]
+            msg = " REQUEST\n%s %s" % (method.upper(), path)
+            if data:
+                if nd:
+                    for item in data.split("\n"):
+                        msg += "\n%s" % json.dumps(item, indent=2)
+                else:
+                    msg += "\n%s" % json.dumps(data, indent=2)
+        elif self.request_log_format in ("curl", "cur_req"):
+            ct = MIME_NEWLINE_DELIMITED_JSON if nd else MIME_JSON
+            msg = " REQUEST\ncurl -v -X %s -H %s %s" % (
+                method.upper(),
+                f"Content-Type='{ct}; charset=UTF-8'",
+                url
+            )
+            if data:
+                msg += "-d '"
+                if nd:
+                    msg += data
+                else:
+                    msg += "s" % json.dumps(data, indent=2)
+                msg += "'"
+
+        self.request_log.info(msg)
+
+
+    def log_response(self, response):
+        if not self.request_log:
+            return
+
+        if "req" in self.request_log_format:
+            return
+
+        msg = " RESPONSE %s" % (response.status_code)
+        data = response.json()
+        if data:
+            msg += "\n%s" % json.dumps(data, indent=2)
+
+        self.request_log.info(msg)
 
 
     def _calc_index_name(
@@ -181,7 +229,9 @@ class Es():
         index_name = self._calc_index_name(index_name)
         url = self._calc_url(index_name) + "/_refresh"
 
+        self.log_request("post", url)
         response = requests.post(url)
+        self.log_response(response)
         if response.status_code != 200:
             LOG.error(query_error(response))
             raise EsException("Failed to refresh ES node.")
@@ -194,7 +244,9 @@ class Es():
     ) -> int:
         url = self._calc_url(index_name) + "/_count"
 
-        response = requests.get(url)
+        self.log_request("post", url)
+        response = requests.post(url)
+        self.log_response(response)
         if response.status_code != 200:
             raise EsException("Failed to count documents.", response=response)
 
@@ -212,7 +264,9 @@ class Es():
         index_name = self._calc_index_name(index_name)
         url = self._calc_url(index_name) + "/_search"
 
+        self.log_request("post", url, query)
         response = requests.post(url, json=query)
+        self.log_response(response)
         if response.status_code != 200:
             LOG.error(query_error(response))
             raise EsException("Failed to search.")
@@ -233,7 +287,9 @@ class Es():
             url += "/" + index
         url += "/%d" % document_id
 
+        self.log_request("get", url)
         response = requests.get(url)
+        self.log_response(response)
         if response.status_code != 200:
             LOG.error(query_error(response))
             raise EsException("Failed to search.")
@@ -261,7 +317,9 @@ class Es():
 
         # Create a new index with our index definition
         LOG.info("Creating ES index '%s'.", index_name)
+        self.log_request("put", url, definition)
         response = requests.put(url, json=definition)
+        self.log_response(response)
         if response.status_code != 200:
             LOG.error(query_error(response))
             raise EsException(
@@ -282,7 +340,9 @@ class Es():
 
         # If a index with the same name alread exists, delete it.
         LOG.info("Deleting ES index `%s`.", index_name)
+        self.log_request("delete", url)
         response = requests.delete(url)
+        self.log_response(response)
         if response.status_code == 404:
             LOG.debug("ES index `%s` did not exist.", index_name)
         elif response.status_code != 200:
@@ -311,7 +371,9 @@ class Es():
 
         # Create a new index with our index definition
         LOG.info("Indexing document.")
+        self.log_request(request, url, document)
         response = requests.request(method, url, json=document)
+        self.log_response(response)
         if not str(response.status_code).startswith("2"):
             LOG.error(query_error(response))
             raise EsException(
@@ -328,7 +390,9 @@ class Es():
 
         # Create a new index with our index definition
         LOG.info("deleting document.")
+        self.log_request("delete", url)
         response = requests.delete(url)
+        self.log_response(response)
         if not str(response.status_code).startswith("2"):
             LOG.error(query_error(response))
             raise EsException(
@@ -342,7 +406,9 @@ class Es():
         index_name = self._calc_index_name(index_name)
         url = self._calc_url(index_name) + "/_mapping"
 
+        self.log_request("get", url)
         response = requests.get(url)
+        self.log_response(response)
         if response.status_code != 200:
             raise EsException("Failed to retrieve mapping.", response=response)
 
@@ -420,9 +486,11 @@ class Es():
         LOG.debug(
             "ES bulk insert of %d records, ~%s bytes",
             payload_length_doc, humanize.naturalsize(payload_length_mem, binary=True))
+        self.log_request("post", url, payload, nd=True)
         response = requests.post(url, data=payload, headers={
             "content-type": MIME_NEWLINE_DELIMITED_JSON,
         })
+        self.log_response(response)
         if response.status_code != 200:
             LOG.error(query_error(response))
             raise EsException("Bulk action failed.")
