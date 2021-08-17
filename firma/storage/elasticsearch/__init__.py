@@ -371,7 +371,7 @@ class Es():
 
         # Create a new index with our index definition
         LOG.info("Indexing document.")
-        self.log_request(request, url, document)
+        self.log_request(method, url, document)
         response = requests.request(method, url, json=document)
         self.log_response(response)
         if not str(response.status_code).startswith("2"):
@@ -436,7 +436,7 @@ class Es():
                 action_data["index"]["_index"] = index_name
 
         if id_ is not None:
-                action_data["index"]["_id"] = id_
+            action_data["index"]["_id"] = id_
 
         self._bulk_buffer += [action_data, document]
 
@@ -459,7 +459,7 @@ class Es():
                 action_data["delete"]["_index"] = index_name
 
         if id_ is not None:
-                action_data["delete"]["_id"] = id_
+            action_data["delete"]["_id"] = id_
 
         self._bulk_buffer += [action_data]
 
@@ -473,7 +473,7 @@ class Es():
     ) -> JsonObject:
 
         if not self._bulk_buffer:
-            return
+            return None
 
         index_name = self._calc_index_name(index_name)
         url = self._calc_url(index_name) + "/_bulk"
@@ -496,7 +496,11 @@ class Es():
             raise EsException("Bulk action failed.")
         result = response.json()
         if result["errors"]:
-            LOG.error(query_error(response))
+            for item in result["items"]:
+                key = next(iter(item))
+                status = item[key]["status"]
+                if status >= 400:
+                    LOG.error(item)
             raise EsException("Some bulk actions failed.")
 
         return result
@@ -522,7 +526,7 @@ def create_indices(
     if not create:
         for name, definition in indices.items():
             try:
-                n = es.count(index_name=name)
+                es.count(index_name=name)
             except EsException as e:
                 if e.type == "index_not_found_exception":
                     create = True
@@ -566,7 +570,7 @@ def compare_indices(
                 json.dumps(definition_obj, indent=2).splitlines(),
                 json.dumps(mapping, indent=2).splitlines(),
             )
-            LOG.warning("".join(ndiff))
+            LOG.warning("".join(diff))
             fail = True
 
     return fail
