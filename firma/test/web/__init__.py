@@ -340,9 +340,10 @@ def _http_request(
             raise HttpConnectionError(
                 f"Host unreachable ({str(e)})", url=url) from None
 
-        if response.status_code == 503:
+        if response.status_code >= 500:
             raise HttpConnectionError(
-                "Host unreachable (proxy)", url=url) from None
+                "%s %s" % (response.status_code, response.reason),
+                url=url) from None
 
         if (300 <= response.status_code <= 399) and redirect:
             location = response.headers.get("Location")
@@ -475,7 +476,7 @@ def selenium_function(request, selenium_url_hook):
     if keep:
         driver.keep(240)
 
-    driver.close_if_open()
+    driver.destroy()
 
 
 
