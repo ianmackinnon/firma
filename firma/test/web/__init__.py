@@ -340,9 +340,10 @@ def _http_request(
             raise HttpConnectionError(
                 f"Host unreachable ({str(e)})", url=url) from None
 
-        if response.status_code == 503:
+        if 502 <= response.status_code <= 503:
             raise HttpConnectionError(
-                "Host unreachable (proxy)", url=url) from None
+                "%s %s" % (response.status_code, response.reason),
+                url=url) from None
 
         if (300 <= response.status_code <= 399) and redirect:
             location = response.headers.get("Location")
@@ -399,13 +400,21 @@ def get_json(request, http_request, get_json_params_hook):
         if request.config.option.profile:
             LOG.info(url)
 
-        response = http_request(
-            url,
-            retry=retry, timeout=timeout,
-            profile=request.config.option.profile,
-            pytest_request=request,
-            **kwargs
-        )
+        try:
+            response = http_request(
+                url,
+                retry=retry, timeout=timeout,
+                profile=request.config.option.profile,
+                pytest_request=request,
+                **kwargs
+            )
+        except HttpConnectionError as e:
+            pytest.fail(e)
+
+        if response.status_code >= 500:
+            pytest.fail(
+                "%s %s" % (response.status_code, response.reason)
+            )
 
         if assert_status_code is not None:
             assert response.status_code == assert_status_code
@@ -475,7 +484,7 @@ def selenium_function(request, selenium_url_hook):
     if keep:
         driver.keep(240)
 
-    driver.close_if_open()
+    driver.destroy()
 
 
 
