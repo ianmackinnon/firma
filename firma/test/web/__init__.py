@@ -47,7 +47,7 @@ LOG = logging.getLogger("pytest_firma")
 DURATION = {}
 VC_ID = None
 DURATION_LOG = None
-
+DEFAULT_STATUS_TIMEOUT = 1
 
 
 # Exceptions
@@ -618,11 +618,14 @@ pytest.mark.parametrize_dict = parametrize_dict
 
 
 def factory_test_server_status(request, base_url, get_json):
-    def f():
+    def f(timeout=None):
         server_retry = request.config.getoption("--server-retry")
 
+        if timeout is None:
+            timeout = DEFAULT_STATUS_TIMEOUT
+
         url = f"{base_url}/server-status"
-        data = get_json(url, retry=server_retry, timeout=1)
+        data = get_json(url, retry=server_retry, timeout=timeout)
 
         jsonschema.validate(data, {
             "type": "object",
@@ -634,7 +637,6 @@ def factory_test_server_status(request, base_url, get_json):
         })
 
     return f
-
 
 
 
