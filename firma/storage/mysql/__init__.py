@@ -460,7 +460,21 @@ def mysql_test(options):
 
 
 
-def drop_database_tables(cursor):
+def drop_database_tables(cursor, database):
+    # This requires the `metadata-lock-info-plugin`:
+    # https://mariadb.com/kb/en/metadata-lock-info-plugin/
+    cursor.execute("select table_name, user, host from information_schema.metadata_lock_info join information_schema.processlist on (id) where lock_type = 'Table metadata lock' and table_schema = '%s';" % database)
+    rows = list(cursor.fetchall())
+    if rows:
+        LOG.error("The following tables are locked and cannot be dropped:")
+        LOG.error("")
+        LOG.error("  %-16s | %-16s | %-16s", "Table", "User", "Host")
+        LOG.error("  %-16s | %-16s | %-16s", *(["-" * 16] * 3))
+        for row in rows:
+            LOG.error("  %-16s | %-16s | %-16s", *row)
+        LOG.error("")
+        sys.exit(1)
+
     cursor.execute("SET FOREIGN_KEY_CHECKS = 0;")
     while True:
         cursor.execute("show full tables where table_type = 'VIEW';")
@@ -494,8 +508,8 @@ where trigger_schema = '%s';""", database)
 
 
 
-def mysql_empty(cursor):
-    drop_database_tables(cursor)
+def mysql_empty(cursor, database):
+    drop_database_tables(cursor, database)
 
 
 
