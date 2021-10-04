@@ -91,7 +91,7 @@ def main_functions(
         return mysql_source(cursor, source)
 
     if empty:
-        return mysql_empty(cursor)
+        return mysql_empty(cursor, options.database)
 
     if drop_triggers:
         return mysql_drop_triggers(cursor, options)
