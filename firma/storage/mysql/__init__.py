@@ -215,7 +215,7 @@ def drop_user(cursor, username):
     try:
         cursor.execute("drop user '%s'@'localhost';" % username)
         LOG.debug("User %s dropped.", username)
-    except pymysql.err.InternalError as e:
+    except pymysql.err.OperationalError as e:
         if e.args[0] != 1396:
             raise e
         LOG.debug("User %s did not exist.", username)
@@ -236,7 +236,7 @@ def drop_database(cursor, name):
     try:
         cursor.execute("drop database %s;" % name)
         LOG.debug("Databse %s dropped.", name)
-    except pymysql.err.InternalError as e:
+    except pymysql.err.OperationalError as e:
         if e.args[0] != 1008:
             raise e
         LOG.debug("Database %s did not exist.", name)
@@ -276,7 +276,7 @@ def database_hash(conf_path):
 
     try:
         connection = pymysql.connect(**db_options)
-    except pymysql.err.InternalError as e:
+    except pymysql.err.OperationalError as e:
         LOG.error("Could not connect with supplied credentials.")
         print(e)
         sys.exit(1)
@@ -400,7 +400,7 @@ def mysql_create(options):
 
     try:
         cursor.execute("use %s;" % options.database)
-    except pymysql.err.InternalError as e:
+    except pymysql.err.OperationalError as e:
         if e.args[0] != 1049:
             raise e
 
