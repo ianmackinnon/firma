@@ -600,16 +600,21 @@ def selenium(request, selenium_session):
 def parametrize_dict(value_name, param_dict, **pd_kwargs):
     assert " " not in value_name
 
-    (keys, values) = zip(*param_dict.items())
+    key_attr = pd_kwargs.pop("key_attr", None)
 
-    values = copy.deepcopy(values)
+    values = []
+    for key, value in param_dict.items():
+        pytest_marks = None
+        value = copy.deepcopy(value)
+        if isinstance(value, dict):
+            pytest_marks = value.pop("pytest_marks", [])
+            if key_attr:
+                value[key_attr] = key
 
-    key_attr = pd_kwargs.get("key_attr", None)
-    if key_attr:
-        for i, value in enumerate(values):
-            value[key_attr] = keys[i]
+        values.append(pytest.param(value, id=key, marks=pytest_marks))
 
-    return pytest.mark.parametrize(value_name, values, ids=keys, **pd_kwargs)
+
+    return pytest.mark.parametrize(value_name, values, **pd_kwargs)
 
 
 
