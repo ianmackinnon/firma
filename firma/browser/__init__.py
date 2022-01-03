@@ -26,6 +26,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.common.exceptions import \
     NoSuchElementException, NoSuchWindowException, WebDriverException
@@ -102,15 +103,17 @@ class SeleniumDriver():
         if socks5_proxy:
             chrome_options.add_argument(f"--proxy-server=socks5://{socks5_proxy}")
 
-        caps = DesiredCapabilities.CHROME
-        caps["goog:loggingPrefs"] = {
+        chrome_options.set_capability('goog:loggingPrefs', {
             "browser": "ALL",
-        }
+        })
+
+        service = Service(
+            chromedriver_path
+        )
 
         driver = webdriver.Chrome(
             options=chrome_options,
-            executable_path=chromedriver_path,
-            desired_capabilities=caps,
+            service=service,
         )
 
         if geometry is not None:

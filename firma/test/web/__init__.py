@@ -604,7 +604,7 @@ def parametrize_dict(value_name, param_dict, **pd_kwargs):
 
     values = []
     for key, value in param_dict.items():
-        pytest_marks = None
+        pytest_marks = []
         value = copy.deepcopy(value)
         if isinstance(value, dict):
             pytest_marks = value.pop("pytest_marks", [])
@@ -612,7 +612,6 @@ def parametrize_dict(value_name, param_dict, **pd_kwargs):
                 value[key_attr] = key
 
         values.append(pytest.param(value, id=key, marks=pytest_marks))
-
 
     return pytest.mark.parametrize(value_name, values, **pd_kwargs)
 
