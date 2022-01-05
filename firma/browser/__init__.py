@@ -17,6 +17,7 @@ import time
 import base64
 import shutil
 import logging
+import warnings
 from typing import Iterable, Union
 
 import requests
@@ -128,6 +129,7 @@ class SeleniumDriver():
 
         driver._show = show
         driver._devtools = devtools
+        driver._js_log_buffer = []
 
         return driver
 
@@ -433,7 +435,7 @@ return jQuery(arguments[0]).contents().filter(function() {
         # URLs in Chrome errors are not plus encoded.
         url = url.replace("+", "%20")
 
-        for entry in self.get_log("browser"):
+        for entry in self.js_log_flush_iterate_empty_buffer():
             if (
                     entry["level"] == "SEVERE" and
                     entry["source"] == "network" and
@@ -445,13 +447,42 @@ return jQuery(arguments[0]).contents().filter(function() {
         assert fail_message
 
 
+    def js_log_flush_to_buffer(self):
+        # This removes read from the Selenium driver log.
+        self._js_log_buffer += list(self.get_log("browser"))
+
+
+    def js_log_iterate_buffer(self):
+        for item in self._js_log_buffer:
+            yield(item)
+
+
+    def js_log_buffer_length(self):
+        return len(self._js_log_buffer)
+
+
+    def js_log_empty_buffer(self):
+        self._js_log_buffer = []
+
+
+    def js_log_flush_iterate_empty_buffer(self):
+        # warnings.warn(
+        #     "`js_log_iterate_and_empty_buffer` is deprecated and will be removed. Use other `js_log_*_buffer` functions directly.",
+        #     DeprecationWarning,
+        # )
+
+        self.js_log_flush_to_buffer()
+        yield from self.js_log_iterate_buffer()
+        self.js_log_empty_buffer()
+
+
     def javascript_log(self):
         def format_message(text):
             return text.split(" ", 2)[2]
 
         return [
             format_message(v["message"])
-            for v in self.get_log("browser")
+            for v in self.js_log_flush_iterate_empty_buffer()
             if v["source"] == "console-api"
         ]
 
@@ -484,7 +515,7 @@ return jQuery(arguments[0]).contents().filter(function() {
 
 
         errors = []
-        for i, entry in enumerate(self.get_log("browser")):
+        for i, entry in enumerate(self.js_log_flush_iterate_empty_buffer()):
             if is_ignored(entry):
                 continue
 
@@ -511,10 +542,10 @@ return jQuery(arguments[0]).contents().filter(function() {
         Call this function after errors are expected to have been generated.
         """
 
-        count = self.get_log("browser")
+        count = self.js_log_flush_iterate_empty_buffer()
         if required:
             assert count
-        assert not self.get_log("browser")
+        assert not self.js_log_flush_iterate_empty_buffer()
 
 
     def wait_until(self, f, wait=None):
