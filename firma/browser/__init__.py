@@ -87,7 +87,8 @@ class SeleniumDriver():
             show=None,
             devtools=None,
             geometry=None,
-            socks5_proxy=None
+            socks5_proxy=None,
+            chrome_options_extra=None,
     ):
 
         if chromedriver_path is None:
@@ -103,6 +104,10 @@ class SeleniumDriver():
 
         if socks5_proxy:
             chrome_options.add_argument(f"--proxy-server=socks5://{socks5_proxy}")
+
+        if chrome_options_extra:
+            for v in chrome_options_extra:
+                chrome_options.add_argument(v)
 
         chrome_options.set_capability('goog:loggingPrefs', {
             "browser": "ALL",
@@ -144,7 +149,8 @@ class SeleniumDriver():
             geometry=None,
             socks5_proxy=None,
             on_create_callback=None,
-            on_destroy_callback=None
+            on_destroy_callback=None,
+            chrome_options_extra=None,
     ):
         self._show = show
         self._devtools = devtools
@@ -154,6 +160,7 @@ class SeleniumDriver():
         self._socks5_proxy = socks5_proxy
         self._on_create_callback = on_create_callback
         self._on_destroy_callback = on_destroy_callback
+        self._chrome_options_extra = chrome_options_extra
 
         if self._default_timeout is None:
             self._default_timeout = DEFAULT_TIMEOUT
@@ -172,7 +179,8 @@ class SeleniumDriver():
                 show=self._show,
                 devtools=self._devtools,
                 geometry=self._geometry,
-                socks5_proxy=self._socks5_proxy
+                socks5_proxy=self._socks5_proxy,
+                chrome_options_extra=self._chrome_options_extra,
             )
             if self._on_create_callback:
                 self._on_create_callback(self)
