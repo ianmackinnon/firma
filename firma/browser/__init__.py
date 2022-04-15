@@ -443,7 +443,7 @@ return jQuery(arguments[0]).contents().filter(function() {
         # URLs in Chrome errors are not plus encoded.
         url = url.replace("+", "%20")
 
-        for entry in self.js_log_flush_iterate_empty_buffer():
+        for entry in self.js_log_iterate_buffer():
             if (
                     entry["level"] == "SEVERE" and
                     entry["source"] == "network" and
@@ -460,7 +460,9 @@ return jQuery(arguments[0]).contents().filter(function() {
         self._js_log_buffer += list(self.get_log("browser"))
 
 
-    def js_log_iterate_buffer(self):
+    def js_log_iterate_buffer(self, flush=True):
+        if flush:
+            self.js_log_flush_to_buffer()
         for item in self._js_log_buffer:
             yield(item)
 
@@ -473,24 +475,13 @@ return jQuery(arguments[0]).contents().filter(function() {
         self._js_log_buffer = []
 
 
-    def js_log_flush_iterate_empty_buffer(self):
-        # warnings.warn(
-        #     "`js_log_iterate_and_empty_buffer` is deprecated and will be removed. Use other `js_log_*_buffer` functions directly.",
-        #     DeprecationWarning,
-        # )
-
-        self.js_log_flush_to_buffer()
-        yield from self.js_log_iterate_buffer()
-        self.js_log_empty_buffer()
-
-
     def javascript_log(self):
         def format_message(text):
             return text.split(" ", 2)[2]
 
         return [
             format_message(v["message"])
-            for v in self.js_log_flush_iterate_empty_buffer()
+            for v in self.js_log_iterate_buffer()
             if v["source"] == "console-api"
         ]
 
@@ -523,7 +514,7 @@ return jQuery(arguments[0]).contents().filter(function() {
 
 
         errors = []
-        for i, entry in enumerate(self.js_log_flush_iterate_empty_buffer()):
+        for i, entry in enumerate(self.js_log_iterate_buffer()):
             if is_ignored(entry):
                 continue
 
@@ -544,16 +535,11 @@ return jQuery(arguments[0]).contents().filter(function() {
 
 
     def javascript_errors_clear(self, required=True):
-        """
-        Getting the log seems to clear it.
-
-        Call this function after errors are expected to have been generated.
-        """
-
-        count = self.js_log_flush_iterate_empty_buffer()
+        count = any(self.js_log_iterate_buffer())
+        self.js_log_empty_buffer()
         if required:
             assert count
-        assert not self.js_log_flush_iterate_empty_buffer()
+        assert not any(self.js_log_iterate_buffer())
 
 
     def wait_until(self, f, wait=None):
