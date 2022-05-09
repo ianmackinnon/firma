@@ -196,18 +196,28 @@ def connection_url_app(conf_path, host=None, port=None):
 def engine_sql_mode(engine, sql_mode=""):
     def set_sql_mode(dbapi_connection, _connection_record):
         cursor = dbapi_connection.cursor()
-        cursor.execute("SET sql_mode = '%s'" % sql_mode)
+        cursor.execute(f"SET sql_mode = '{sql_mode}'")
     event.listen(engine, "first_connect", set_sql_mode, insert=True)
     event.listen(engine, "connect", set_sql_mode)
+
 
 
 def engine_disable_mode(engine, mode):
     def set_sql_mode(dbapi_connection, _connection_record):
         cursor = dbapi_connection.cursor()
-        cursor.execute(
-            "SET sql_mode=(SELECT REPLACE(@@sql_mode,'%s',''))" % mode)
+        cursor.execute(f"SET sql_mode=(SELECT REPLACE(@@sql_mode,'{mode}',''))")
     event.listen(engine, "first_connect", set_sql_mode, insert=True)
     event.listen(engine, "connect", set_sql_mode)
+
+
+
+def engine_set_optimizer_switch(engine, key, value):
+    value_text = "on" if value else "off"
+    def set_optimizer_switch(dbapi_connection, _connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute(f"SET optimizer_switch='{key}={value_text}';")
+    event.listen(engine, "first_connect", set_optimizer_switch, insert=True)
+    event.listen(engine, "connect", set_optimizer_switch)
 
 
 

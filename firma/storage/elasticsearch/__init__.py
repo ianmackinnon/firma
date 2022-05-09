@@ -3,14 +3,18 @@ import enum
 import json
 import logging
 import argparse
+import warnings
+from getpass import getpass
 from io import IOBase
 from difflib import ndiff
 from typing import Union, Callable
 from pathlib import Path
 from urllib.parse import urlparse, urlunparse
 
+import urllib3
 import humanize
 import requests
+from requests.auth import HTTPBasicAuth
 
 from firma.util import load_conf
 
@@ -20,11 +24,23 @@ DEFAULT_API_ROOT = "http://localhost:9200"
 CHUNK_SIZE_DOCS = 2**8
 MIME_JSON = "application/json"
 MIME_NEWLINE_DELIMITED_JSON = "application/x-ndjson"
+COMMAND_LIST = {
+    "put-roles",
+    "delete-roles",
+    "compare-roles",
+    "put-users",
+    "delete-users",
+    "compare-users",
+    "put-indices",
+    "delete-indices",
+    "compare-indices",
+    "index-docs",
+    "delete-docs",
+}
+
 
 
 JsonObject = Union[dict, list, str, float, int, bool, None]
-
-
 
 class EsException(Exception):
     def __init__(self, *args, **kwargs):
@@ -40,14 +56,6 @@ class EsException(Exception):
 
 
 
-# Defaults for functions where `None` can't be the default.
-
-@enum.unique
-class Default(enum.Enum):
-    INDEX_NAME = enum.auto()
-
-
-
 LOG = logging.getLogger('elasticsearch')
 
 
@@ -57,36 +65,63 @@ def query_error(response):
 
 
 
-def get_conf_defaults(path: Path) -> dict:
+def get_conf(
+        path: Path,
+        **kwargs
+) -> dict:
     config = load_conf(path)
     if "elasticsearch" not in config:
         raise Exception(
             f"Section `elasticsearch` is required but not present in configuration file {str(path)}.")
 
-    api_root = config["elasticsearch"].get("api-root", DEFAULT_API_ROOT)
+    api_root = config.get("elasticsearch", "api-root", fallback=DEFAULT_API_ROOT)
     api_root = verify_uri(api_root)
 
     data = {
         "api_root": api_root,
     }
 
-    if "index-prefix" in config["elasticsearch"]:
-        data["index_prefix"] = config["elasticsearch"]["index-prefix"]
+    if "prefix" in config["elasticsearch"]:
+        data["prefix"] = config["elasticsearch"]["prefix"]
+
+    if "ssl_cert" in config["elasticsearch"]:
+        data["ssl_cert"] = config["elasticsearch"]["ssl_cert"]
+        if data["ssl_cert"].lower() == "false":
+            data["ssl_cert"] = False
+
+    if admin_conf := config.get("elasticsearch-admin", "username", fallback=None):
+        data["user_admin"] = {
+            "username": config.get("elasticsearch-admin", "username", fallback=None),
+            "password": config.get("elasticsearch-admin", "password", fallback=None),
+            "role": config.get("elasticsearch-admin", "role", fallback=None),
+        }
+
+    if kwargs:
+        if api_root := kwargs.get("api_root", None):
+            data["api_root"] = api_root
+        if api_prefix := kwargs.get("prefix", None):
+            data["prefis"] = prefix
+
+    assert data["prefix"]
 
     return data
 
 
 
-def get_conf(args: argparse.Namespace, defaults: dict) -> dict:
-    api_root = args.api_root or defaults["api_root"]
-    index_prefix = args.prefix or defaults.get("index_prefix", None)
+def get_search_factory(conf_path, user_key):
+    def get_search(**kwargs):
+        config = get_conf(conf_path, kwargs=kwargs)
 
-    assert index_prefix
+        es = Es(
+            api_root=config["api_root"],
+            prefix=config["prefix"],
+            ssl_cert=config["ssl_cert"],
+            auth=config[user_key],
+        )
 
-    return {
-        "api_root": api_root,
-        "index_prefix": index_prefix,
-    }
+        return es
+
+    return get_search
 
 
 
@@ -103,23 +138,51 @@ class Es():
 
     def __init__(
             self,
-            api_root: [str, None] = None,
-            index_prefix: [str, None] = None,
-            index_name: [str, None] = None,
-            request_log: [logging.Logger, None] = None,
-            request_log_format: [str, None] = None,
+            api_root: str | None = None,
+            prefix: str | None = None,
+            ssl_cert: Path | bool | None = None,
+            auth: str | None = None,
+            request_log: logging.Logger | None = None,
+            request_log_format: str | None = None,
     ):
 
         self.api_root = api_root
-        self.index_name = index_name  # Default, may be overridden in member functions
-        self.index_prefix = index_prefix
+        self.prefix = prefix
+        self.ssl_cert = ssl_cert
+        if self.ssl_cert is False:
+            warnings.filterwarnings(
+                action='ignore',
+                category=urllib3.connectionpool.InsecureRequestWarning,
+                module='urllib3.connectionpool'
+            )
+        self.auth = auth
 
         self.request_log = request_log
         self.request_log_format = request_log_format
         if self.request_log_format is None:
             self.request_log_format = "console_req"
 
+        self._basic_auth_creds = {}
         self._bulk_buffer = []
+
+
+    @property
+    def request_kwargs(self):
+        kwargs = {}
+
+        if self.auth:
+            if isinstance(self.auth, dict):
+                kwargs["auth"] = HTTPBasicAuth(
+                    self.user_name(self.auth["username"]),
+                    self.auth["password"]
+                )
+            else:
+                kwargs["auth"] = self.auth_password(self.auth)
+
+        if self.ssl_cert is not None:
+            kwargs["verify"] = self.ssl_cert
+
+        return kwargs
 
 
     def log_request(self, method, url, data=None, nd=None):
@@ -168,9 +231,66 @@ class Es():
         self.request_log.info(msg)
 
 
+    def auth_password(
+            self,
+            username: str
+    ):
+        if username not in self._basic_auth_creds:
+            self._basic_auth_creds[username] = getpass(
+                prompt=f"Password for Elasticsearch user `{username}`: ")
+        return HTTPBasicAuth(username, self._basic_auth_creds[username])
+
+
+    def put_role(
+            self,
+            name: str,
+            definition: Union[str, Path, IOBase, dict],
+    ):
+        definition = self._load_definition_object(definition, replace_prefix=True)
+
+        if self.prefix:
+            name = f"{self.prefix}-{name}"
+
+        url = f"{self.api_root}/_security/role/{name}"
+
+        self.log_request("put", url)
+        response = requests.put(url, json=definition, **self.request_kwargs)
+        self.log_response(response)
+        if response.status_code != 200:
+            LOG.error(query_error(response))
+            raise EsException("Failed to put ES role.")
+        LOG.debug("OK")
+
+
+    def user_name(self, name):
+        if self.prefix:
+            name = f"{self.prefix}-{name}"
+        return name
+
+
+    def put_user(
+            self,
+            name: str,
+            definition: Union[str, Path, IOBase, dict],
+    ):
+        definition = self._load_definition_object(definition, replace_prefix=True)
+
+        name = self.user_name(name)
+
+        url = f"{self.api_root}/_security/user/{name}"
+
+        self.log_request("put", url)
+        response = requests.put(url, json=definition, **self.request_kwargs)
+        self.log_response(response)
+        if response.status_code != 200:
+            LOG.error(query_error(response))
+            raise EsException("Failed to put ES user.")
+        LOG.debug("OK")
+
+
     def _calc_index_name(
             self,
-            index_name: [str, None, Default] = Default.INDEX_NAME,
+            index_name: [str, None],
     ) -> Union[str, None]:
         """
         Calculate the index name for member functions.
@@ -179,13 +299,10 @@ class Es():
         Index name may be a comma separated string.
         """
 
-        if index_name is Default.INDEX_NAME:
-            index_name = self.index_name
-
-        if index_name and self.index_prefix:
+        if index_name and self.prefix:
             index_name = ",".join([
-                v if v.startswith(self.index_prefix + "-")
-                else self.index_prefix + "-" + v
+                v if v.startswith(self.prefix + "-")
+                else self.prefix + "-" + v
                 for v in index_name.split(",")
             ])
 
@@ -194,7 +311,7 @@ class Es():
 
     def _calc_url(
             self,
-            index_name: [str, None, Default] = Default.INDEX_NAME,
+            index_name: str,
     ) -> str:
         index_name = self._calc_index_name(index_name)
 
@@ -204,16 +321,21 @@ class Es():
 
         return url
 
-    @staticmethod
+
     def _load_definition_object(
+            self,
             definition: Union[str, Path, IOBase, dict],
+            replace_prefix: bool | None = None
     ):
         if isinstance(definition, str):
             definition = Path(definition)
         if isinstance(definition, Path):
-            with definition.open() as fp:
-                definition = json.load(fp)
+            text = definition.read_text()
+            if self.prefix and replace_prefix:
+                text = text.replace("{PREFIX}", f"{self.prefix}-")
+            definition = json.loads(text)
         if isinstance(definition, IOBase):
+            raise NotImplementedError()
             definition = json.load(definition)
 
         assert isinstance(definition, dict)
@@ -223,14 +345,14 @@ class Es():
 
     def refresh(
             self,
-            index_name: [str, None, Default] = Default.INDEX_NAME,
+            index_name: str,
     ) -> None:
 
         index_name = self._calc_index_name(index_name)
         url = self._calc_url(index_name) + "/_refresh"
 
         self.log_request("post", url)
-        response = requests.post(url)
+        response = requests.post(url, **self.request_kwargs)
         self.log_response(response)
         if response.status_code != 200:
             LOG.error(query_error(response))
@@ -240,12 +362,12 @@ class Es():
 
     def count(
             self,
-            index_name: [str, None, Default] = Default.INDEX_NAME,
+            index_name: str,
     ) -> int:
         url = self._calc_url(index_name) + "/_count"
 
         self.log_request("post", url)
-        response = requests.post(url)
+        response = requests.post(url, **self.request_kwargs)
         self.log_response(response)
         if response.status_code != 200:
             raise EsException("Failed to count documents.", response=response)
@@ -257,15 +379,15 @@ class Es():
 
     def search(
             self,
+            index_name: str,
             query,
-            index_name: [str, None, Default] = Default.INDEX_NAME,
     ):
 
         index_name = self._calc_index_name(index_name)
         url = self._calc_url(index_name) + "/_search"
 
         self.log_request("post", url, query)
-        response = requests.post(url, json=query)
+        response = requests.post(url, json=query, **self.request_kwargs)
         self.log_response(response)
         if response.status_code != 200:
             LOG.error(query_error(response))
@@ -288,7 +410,7 @@ class Es():
         url += "/%d" % document_id
 
         self.log_request("get", url)
-        response = requests.get(url)
+        response = requests.get(url, **self.request_kwargs)
         self.log_response(response)
         if response.status_code != 200:
             LOG.error(query_error(response))
@@ -303,61 +425,62 @@ class Es():
         return result
 
 
-    def create_index(
+    def put_index(
             self,
+            name: str,
             definition: Union[str, Path, IOBase, dict],
-            index_name: [str, None, Default] = Default.INDEX_NAME,
     ):
-        index_name = self._calc_index_name(index_name)
+        name = self._calc_index_name(name)
         definition = self._load_definition_object(definition)
 
-        url = self._calc_url(index_name)
+        url = self._calc_url(name)
 
-        self.delete_index(index_name)
+        # Unlike user and role, PUT index will fail if it exists:
+        self.delete_index(name)
 
         # Create a new index with our index definition
-        LOG.info("Creating ES index '%s'.", index_name)
+        LOG.info("Creating ES index '%s'.", name)
         self.log_request("put", url, definition)
-        response = requests.put(url, json=definition)
+        response = requests.put(url, json=definition, **self.request_kwargs)
         self.log_response(response)
         if response.status_code != 200:
             LOG.error(query_error(response))
             raise EsException(
-                "Failed to create ES index `%s`." % index_name,
+                "Failed to create ES index `%s`." % name,
                 response=response)
-        LOG.info("Created ES index `%s`.", index_name)
+        LOG.info("Created ES index `%s`.", name)
 
 
     def delete_index(
             self,
-            index_name: [str, None, Default] = Default.INDEX_NAME,
+            name: str,
     ) -> None:
         """
         Attempt to delete index.
         """
-        index_name = self._calc_index_name(index_name)
-        url = self._calc_url(index_name)
+        name = self._calc_index_name(name)
+        url = self._calc_url(name)
 
         # If a index with the same name alread exists, delete it.
-        LOG.info("Deleting ES index `%s`.", index_name)
+        LOG.info("Deleting ES index `%s`.", name)
         self.log_request("delete", url)
-        response = requests.delete(url)
+        response = requests.delete(url, **self.request_kwargs)
         self.log_response(response)
         if response.status_code == 404:
-            LOG.debug("ES index `%s` did not exist.", index_name)
+            LOG.debug("ES index `%s` did not exist.", name)
         elif response.status_code != 200:
             LOG.error(query_error(response))
             raise EsException(
-                "Failed to delete ES index `%s`." % index_name,
+                "Failed to delete ES index `%s`." % name,
                 response=response)
         else:
-            LOG.info("Deleted ES index `%s`.", index_name)
+            LOG.info("Deleted ES index `%s`.", name)
 
 
     def index(
             self,
+            index_name: str,
             document,
-            index_name: [str, None, Default] = Default.INDEX_NAME,
             id_=None
     ):
         index_name = self._calc_index_name(index_name)
@@ -372,7 +495,7 @@ class Es():
         # Create a new index with our index definition
         LOG.info("Indexing document.")
         self.log_request(method, url, document)
-        response = requests.request(method, url, json=document)
+        response = requests.request(method, url, json=document, **self.request_kwargs)
         self.log_response(response)
         if not str(response.status_code).startswith("2"):
             LOG.error(query_error(response))
@@ -382,7 +505,7 @@ class Es():
 
     def delete(
             self,
-            index_name: [str, None, Default] = Default.INDEX_NAME,
+            index_name: str,
             id_=None
     ) -> None:
         index_name = self._calc_index_name(index_name)
@@ -391,7 +514,31 @@ class Es():
         # Create a new index with our index definition
         LOG.info("deleting document.")
         self.log_request("delete", url)
-        response = requests.delete(url)
+        response = requests.delete(url, **self.request_kwargs)
+        self.log_response(response)
+        if not str(response.status_code).startswith("2"):
+            LOG.error(query_error(response))
+            raise EsException(
+                "Failed to delete document `%s`." % response.status_code)
+
+
+    def delete_all(
+            self,
+            index_name: str,
+    ) -> None:
+        index_name = self._calc_index_name(index_name)
+        url = self._calc_url(index_name) + f"/_delete_by_query"
+
+        query = {
+            "query": {
+                "match_all": {},
+            }
+        }
+
+        # Create a new index with our index definition
+        LOG.info("deleting document.")
+        self.log_request("delete", url)
+        response = requests.post(url, json=query, **self.request_kwargs)
         self.log_response(response)
         if not str(response.status_code).startswith("2"):
             LOG.error(query_error(response))
@@ -401,13 +548,13 @@ class Es():
 
     def mapping(
             self,
-            index_name: [str, None, Default] = Default.INDEX_NAME,
+            index_name: str,
     ) -> JsonObject:
         index_name = self._calc_index_name(index_name)
         url = self._calc_url(index_name) + "/_mapping"
 
         self.log_request("get", url)
-        response = requests.get(url)
+        response = requests.get(url, **self.request_kwargs)
         self.log_response(response)
         if response.status_code != 200:
             raise EsException("Failed to retrieve mapping.", response=response)
@@ -422,8 +569,8 @@ class Es():
 
     def index_queue(
             self,
+            index_name: str,
             document,
-            index_name: [str, None, Default] = Default.INDEX_NAME,
             id_=None,
             auto=True,
     ) -> None:
@@ -441,12 +588,12 @@ class Es():
         self._bulk_buffer += [action_data, document]
 
         if auto and len(self._bulk_buffer) >= CHUNK_SIZE_DOCS:
-            self.bulk()
+            self.bulk(index_name)
 
 
     def delete_queue(
             self,
-            index_name: [str, None, Default] = Default.INDEX_NAME,
+            index_name: str,
             id_=None,
             auto=True,
     ) -> None:
@@ -464,12 +611,12 @@ class Es():
         self._bulk_buffer += [action_data]
 
         if auto and len(self._bulk_buffer) >= CHUNK_SIZE_DOCS:
-            self.bulk()
+            self.bulk(index_name)
 
 
     def bulk(
             self,
-            index_name: [str, None, Default] = Default.INDEX_NAME,
+            index_name: str,
     ) -> JsonObject:
 
         if not self._bulk_buffer:
@@ -489,7 +636,7 @@ class Es():
         self.log_request("post", url, payload, nd=True)
         response = requests.post(url, data=payload, headers={
             "content-type": MIME_NEWLINE_DELIMITED_JSON,
-        })
+        }, **self.request_kwargs)
         self.log_response(response)
         if response.status_code != 200:
             LOG.error(query_error(response))
@@ -511,32 +658,16 @@ class Es():
 
 
 
-def create_indices(
+def put_indices(
         es: Es,
         indices: dict,
-        force: Union[bool, None],
 ):
     """
-    Recreate indices if they don't exist or if `force` is truthy.
-
     `indices` is a dict of `{name: definition}`.
     """
 
-    create = force
-    if not create:
-        for name, definition in indices.items():
-            try:
-                es.count(index_name=name)
-            except EsException as e:
-                if e.type == "index_not_found_exception":
-                    create = True
-                    break
-
-    if not create:
-        return
-
     for name, definition in indices.items():
-        es.create_index(definition, index_name=name)
+        es.put_index(name, definition)
 
 
 
@@ -544,8 +675,9 @@ def delete_indices(
         es: Es,
         indices: dict,
 ):
+    LOG.info("delete-indices")
     for name in indices:
-        es.delete_index(index_name=name)
+        es.delete_index(name)
 
 
 
@@ -577,12 +709,51 @@ def compare_indices(
 
 
 
+def delete_docs(
+        es: Es,
+        indices: dict,
+):
+    LOG.info("delete-docs")
+    for name in indices:
+        es.delete(name)
+
+
+
 # Management parser and main
 
 
 
 def verify_uri(text: str) -> str:
     return urlunparse(urlparse(text))
+
+
+
+def put_roles(
+        es: Es,
+        roles: dict,
+):
+    for name, path in roles.items():
+        es.put_role(name, path)
+
+
+
+def put_users(
+        es: Es,
+        user_admin: dict | None = None,
+):
+    if user_admin:
+        definition = {
+            "password" : user_admin["password"],
+        }
+        if user_admin["role"]:
+            role = user_admin["role"]
+            if es.prefix:
+                role = f"{es.prefix}-{role}"
+            definition["roles"] = [
+                role,
+            ]
+
+        es.put_user(user_admin["username"], definition)
 
 
 
@@ -600,9 +771,8 @@ def create_manage_parser(desc: str) -> argparse.ArgumentParser:
 
     parser.add_argument(
         "--api-root", "-A",
-        default="http://localhost:9200",
         type=verify_uri,
-        help="Elasticsearch api-root. Default: `{DEFAULT_API_ROOT}`.")
+        help=f"Elasticsearch api-root. Default: `{DEFAULT_API_ROOT}`.")
 
     parser.add_argument(
         "--prefix", "-P",
@@ -616,40 +786,61 @@ def create_manage_parser(desc: str) -> argparse.ArgumentParser:
     parser.add_argument(
         "command",
         metavar="COMMAND",
-        help="One of `create`, `insert`, `build`, `update`, `delete`, `compare`.")
+        nargs="+",
+        help=f"One or more of {', '.join([f'`{v}`' for v in COMMAND_LIST])}.")
 
-    # Insert documents if any of the following are specified
     return parser
+
+
+
+def filter_indices(
+        args: argparse.Namespace,
+        indices: dict,
+) -> dict:
+    if args.index_name:
+        return {k: v for k, v in indices.items() if k in args.index_name}
+    return indices
+
+
+
+def manage_kwargs(
+        args: argparse.Namespace | None = None
+):
+    kwargs = {}
+
+    if args.api_root is not None:
+        kwargs["api_root"] = args.api_root
+    if args.prefix is not None:
+        kwargs["prefix"] = args.prefix
+
+    return kwargs
 
 
 
 def manage_main(
         args: argparse.Namespace,
+        roles: dict,
         indices: dict,
-        insert_documents: Callable,
-        api_root: Union[str, None] = None,
-        index_prefix: Union[str, None] = None,
+        api_root: str | None = None,
+        prefix: str | None = None,
+        ssl_cert: str | None = None,
+        user_admin: dict | None = None,
 ) -> None:
-    indices = indices.copy()
-    if args.index_name:
-        indices = {k: v for k, v in indices.items() if k in args.index_name}
+    es = Es(
+        api_root=api_root,
+        prefix=prefix,
+        ssl_cert=ssl_cert,
+        auth="elastic",
+    )
 
-    es = Es(api_root=api_root, index_prefix=index_prefix)
-
-    if args.command == "delete":
+    if "delete-indices" in args.command:
         delete_indices(es, indices)
-        return
 
-    if args.command == "update":
-        raise NotImplementedError()
+    if "put-roles" in args.command:
+        put_roles(es, roles)
 
-    if args.command == "compare":
-        if compare_indices(es, indices):
-            sys.exit(1)
-        return
+    if "put-users" in args.command:
+        put_users(es, user_admin)
 
-    if args.command in ("create", "build"):
-        create_indices(es, indices, force=True)
-
-    if args.command in ("build", "insert"):
-        insert_documents(es, args, indices)
+    if "put-indices" in args.command:
+        put_indices(es, indices)
