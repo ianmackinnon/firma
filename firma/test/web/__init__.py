@@ -24,6 +24,7 @@ import time
 import logging
 import datetime
 import urllib.parse
+from typing import Iterable
 from pathlib import Path
 from subprocess import Popen, PIPE
 
@@ -492,6 +493,7 @@ def get_chrome_options(request):
     if "default_timeout" in request.config.option:
         raise Exception("Config option `default_timeout` is deprecated. Use `driver_timeout` instead.")
 
+
     options = {
         "socks5_proxy": request.config.option.socks5_proxy,
         "default_timeout": request.config.option.driver_timeout,
@@ -594,6 +596,50 @@ def selenium(request, selenium_session):
     history_length = driver.execute_script("return window.history.length;")
     if history_length > 40:
         driver.restart()
+
+
+
+def selenium_clear_js_generator(ignore_errors: Iterable):
+    def selenium_clear_js_log(selenium):
+        yield
+
+
+        def is_ignored(item):
+            for needle in ignore_errors:
+                if isinstance(needle, re.Pattern):
+                    if bool(needle.search(item["message"])):
+                        return True
+                else:
+                    if needle in item["message"]:
+                        return True
+
+            return False
+
+
+        selenium.js_log_flush_to_buffer()
+        fail = None
+        if selenium.js_log_buffer_length():
+            for item in selenium.js_log_iterate_buffer():
+                if is_ignored(item):
+                    continue
+
+                log_f = {
+                    "INFO": LOG.info,
+                    "WARNING": LOG.warning,
+                    "SEVERE": LOG.error,
+                }.get(item["level"], LOG.info)
+
+                if log_f:
+                    log_f(item["message"])
+
+                if item["level"] in ("SEVERE",):
+                    fail = True
+        selenium.js_log_empty_buffer()
+
+        if fail:
+            pytest.fail("Javascript errors")
+
+    return selenium_clear_js_log
 
 
 

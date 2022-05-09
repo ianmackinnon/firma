@@ -18,7 +18,7 @@ import base64
 import shutil
 import logging
 import warnings
-from typing import Iterable, Union
+from typing import Callable, Iterable, Union
 
 import requests
 
@@ -185,6 +185,7 @@ class SeleniumDriver():
             if self._on_create_callback:
                 self._on_create_callback(self)
 
+        self._driver.implicitly_wait(self._default_timeout)
         self.set_and_verify_implicit_timeout(self._default_timeout)
 
 
@@ -240,9 +241,11 @@ class SeleniumDriver():
 
 
     def set_and_verify_implicit_timeout(self, timeout):
-        assert self.get_timeout("implicit") == 0
         self.implicitly_wait(timeout)
-        assert self.get_timeout("implicit") == timeout
+        result = self.get_timeout("implicit")
+        assert result == timeout, \
+            f"Set implicit timeout to `{timeout}`, but found set to `{result}`."
+
 
     def send_command(self, cmd, params=None):
         url = (
@@ -433,26 +436,56 @@ return jQuery(arguments[0]).contents().filter(function() {
             break
 
 
-    def assert_failed(self, url, status_code):
+    def clear_js_error_url(self, url, status_code):
         """
         Assert that there exists a console error matching `url` and `status_code`.
+        Remove the error from the JS log buffer.
         """
 
-        fail_message = None
+        return self.clear_js_error(
+            level="SEVERE", source="network", message=[
+                url,
+                str(status_code)
+            ])
 
-        # URLs in Chrome errors are not plus encoded.
-        url = url.replace("+", "%20")
 
-        for entry in self.js_log_iterate_buffer():
-            if (
-                    entry["level"] == "SEVERE" and
-                    entry["source"] == "network" and
-                    url in entry["message"] and
-                    str(status_code) in entry["message"]
-            ):
-                fail_message = entry
+    def clear_js_error(
+            self,
+            level: Union[str, None] = None,
+            source: Union[str, None] = None,
+            message: Union[Iterable[str], str, None] = None,
+    ):
+        error = None
+        message_ = []
+        if message:
+            if isinstance(message, str):
+                message_ = [message]
+            elif isinstance(message, Iterable):
+                message_ = message
+
+        for i, entry in enumerate(self.js_log_iterate_buffer()):
+            if level is not None and entry["level"] != level:
+                continue
+            if source is not None and entry["source"] != source:
+                continue
+
+            for item in message_:
+                if item not in entry["message"]:
+                    break
+            else:
+                error = entry
                 break
-        assert fail_message
+
+        if not error:
+            LOG.error("JS Log:")
+            for entry in self.js_log_iterate_buffer():
+                LOG.error(f"  {repr(entry)}")
+
+        assert error, f"No Javascript errors with message matching {repr(message_)}."
+
+        self._js_log_buffer.pop(i)
+
+        return error
 
 
     def js_log_flush_to_buffer(self):
@@ -532,14 +565,6 @@ return jQuery(arguments[0]).contents().filter(function() {
             errors.append(entry)
 
         return errors
-
-
-    def javascript_errors_clear(self, required=True):
-        count = any(self.js_log_iterate_buffer())
-        self.js_log_empty_buffer()
-        if required:
-            assert count
-        assert not any(self.js_log_iterate_buffer())
 
 
     def wait_until(self, f, wait=None):
