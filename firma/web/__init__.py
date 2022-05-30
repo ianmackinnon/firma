@@ -298,7 +298,7 @@ class Application(tornado.web.Application):
 
     # Sibling Applications
 
-    def init_sibling(self, db_key, conf_path, parameter):
+    def init_sibling(self, db_key, conf_path=None, key=None, value=None):
         if not re.match(r"[a-z_]+$", db_key):
             raise Exception("Sibling name '%s' must consist of lowercase "
                             "letters or underscores" % db_key)
@@ -309,7 +309,13 @@ class Application(tornado.web.Application):
         self.settings.app.siblings[db_key] = {}
         sibling = self.settings.app.siblings[db_key]
 
-        conf_url = conf_get(conf_path, 'app', parameter)
+        if value is not None:
+            conf_url = value
+        elif conf_url is not None and key is not None:
+            conf_url = conf_get(conf_path, 'app', key)
+        else:
+            raise Exception("Either `value` or `conf_path` and `key` must be supplied.")
+
         sibling.url = conf_url or None
 
         self.add_stat("URL %s" % db_key, sibling.url or "offline")
