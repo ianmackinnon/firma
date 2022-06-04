@@ -303,6 +303,7 @@ var firma = (function () {
     _xhr: {},
     _xhrDebug: false,
     _xhrBuffers: {},
+    _stateDebug: false,
 
     ajax: function (options) {
       if (app._xhrDebug) {
@@ -795,8 +796,24 @@ var firma = (function () {
 
       serializedState = JSON.stringify(state);
 
-      window.sessionStorage.setItem(key, serializedState);
-      window.sessionStorage.setItem("firmaStateIndex", JSON.stringify(index));
+      if (app._stateDebug) {
+        console.log("setCompleteState", key, serializedState.length);
+        console.log("setCompleteState", "firmaStateIndex", index);
+      }
+
+      try {
+        window.sessionStorage.setItem(key, serializedState);
+        window.sessionStorage.setItem("firmaStateIndex", JSON.stringify(index));
+      } catch (error) {
+        if (error.name == "QuotaExceededError") {
+          firma.trimState(1);
+          console.log("Trimmed state.");
+          window.sessionStorage.setItem(key, serializedState);
+          window.sessionStorage.setItem("firmaStateIndex", JSON.stringify(index));
+        } else {
+          throw error.stack;
+        }
+      }
 
       window.history.replaceState(key, null);
 
@@ -855,6 +872,38 @@ var firma = (function () {
       var keyAux = key + "-aux";
 
       window.sessionStorage.setItem(keyAux, JSON.stringify(state));
+    },
+
+    trimState: function (n) {
+      // Keep `n` previous states.
+      // Remove all previous states if `n` is falsy.
+
+      var r = new RegExp("^firmaState-([0-9]+)(-aux)?");
+
+      var stateN = function (s) {
+        var match = r.exec(s);
+        return match && Number.parseInt(match[1]);
+      }
+
+      var key = window.history.state;
+      var a = stateN(key);
+
+      n = n || 0;
+
+      _.each(Object.keys(window.sessionStorage), function (v) {
+        if (n && v == "firmaStateIndex") {
+          return;
+        }
+        var b = stateN(v);
+        if (_.isNumber(b) && a - n < b && b <= a) {
+          return;
+        }
+        if (app._stateDebug) {
+          console.log("trimState", v);
+        }
+        window.sessionStorage.removeItem(v);
+      });
+
     }
 
   };

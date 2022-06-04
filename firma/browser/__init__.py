@@ -508,6 +508,11 @@ return jQuery(arguments[0]).contents().filter(function() {
         self._js_log_buffer = []
 
 
+    def js_log_filter_buffer(self, f):
+        self.js_log_flush_to_buffer()
+        self._js_log_buffer = [v for v in self._js_log_buffer if f(v)]
+
+
     def javascript_log(self):
         def format_message(text):
             return text.split(" ", 2)[2]

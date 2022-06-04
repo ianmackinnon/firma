@@ -309,9 +309,10 @@ class Application(tornado.web.Application):
         self.settings.app.siblings[db_key] = {}
         sibling = self.settings.app.siblings[db_key]
 
+        conf_url = None
         if value is not None:
             conf_url = value
-        elif conf_url is not None and key is not None:
+        elif conf_path is not None and key is not None:
             conf_url = conf_get(conf_path, 'app', key)
         else:
             raise Exception("Either `value` or `conf_path` and `key` must be supplied.")
