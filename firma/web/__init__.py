@@ -1178,7 +1178,20 @@ class AuthPasswordOtpMixin():
 
 
 
-class AuthGoogleOAuth2UserMixin(tornado.auth.GoogleOAuth2Mixin):
+class AuthFirmaOAuth2Mixin():
+    @classmethod
+    def conf_settings(cls, conf_path):
+        return {
+            cls._OAUTH_SETTINGS_KEY: {
+                "key": conf_get(conf_path, cls._CONF_SETTINGS_KEY, "client-id"),
+                "secret": conf_get(conf_path, cls._CONF_SETTINGS_KEY, "client-secret"),
+            },
+        }
+
+
+class AuthGoogleOAuth2UserMixin(tornado.auth.GoogleOAuth2Mixin, AuthFirmaOAuth2Mixin):
+    _CONF_SETTINGS_KEY = "google-oauth"
+
     async def _oauth_get_user_future(
         self, access_token: Dict[str, Any]
     ) -> Dict[str, Any]:
@@ -1194,6 +1207,48 @@ class AuthGoogleOAuth2UserMixin(tornado.auth.GoogleOAuth2Mixin):
         self, redirect_uri: str, code: str
     ) -> Dict[str, Any]:
         access_token = await super().get_authenticated_user(redirect_uri, code)
+        user_data = await self._oauth_get_user_future(access_token)
+        return user_data
+
+
+
+class AuthWordpressOAuth2UserMixin(tornado.auth.OAuth2Mixin, AuthFirmaOAuth2Mixin):
+    _CONF_SETTINGS_KEY = "wp-oauth"
+    _OAUTH_SETTINGS_KEY = "wp_oauth"
+
+    async def _oauth_get_user_future(
+        self, access_token: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        http = self.get_auth_http_client()
+        url = self._OAUTH_USERINFO_URL + "?" + urllib.parse.urlencode({
+            "access_token": access_token["access_token"]
+        })
+        response = await http.fetch(url)
+        return escape.json_decode(response.body)
+
+
+    async def get_authenticated_user(
+            self,
+            redirect_uri: str,
+            code: str
+    ) -> Dict[str, Any]:
+        http = self.get_auth_http_client()
+        body = urllib.parse.urlencode({
+            "redirect_uri": redirect_uri,
+            "code": code,
+            "client_id": self.settings[self._OAUTH_SETTINGS_KEY]["key"],
+            "client_secret": self.settings[self._OAUTH_SETTINGS_KEY]["secret"],
+            "grant_type": "authorization_code",
+        })
+
+        response = await http.fetch(
+            self._OAUTH_ACCESS_TOKEN_URL,
+            method="POST",
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            body=body,
+        )
+        access_token = escape.json_decode(response.body)
+
         user_data = await self._oauth_get_user_future(access_token)
         return user_data
 
