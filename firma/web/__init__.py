@@ -1189,8 +1189,38 @@ class AuthFirmaOAuth2Mixin():
         }
 
 
+    def get_login_url(self):
+        login_resource = self.get_login_resource()
+
+        if "?" in login_resource:
+            raise Exception()
+
+        scheme = self.request.headers.get("X-Forwarded-Proto", self.request.protocol)
+        host = self.request.headers.get("X-Forwarded-Host", self.request.host)
+        port = self.request.headers.get("X-Forwarded-Port", None)
+
+        login_host = f"{scheme}://{host}"
+        if port:
+            login_host += f":{port}"
+        login_url = login_host + login_resource
+
+        return login_url
+
+
+    async def get(self):
+        login_url = self.get_login_url()
+        code = self.get_argument('code', None)
+
+        if code is None:
+            self.authorize(login_url)
+        else:
+            await self.authenticate(code, login_url)
+
+
+
 class AuthGoogleOAuth2UserMixin(tornado.auth.GoogleOAuth2Mixin, AuthFirmaOAuth2Mixin):
     _CONF_SETTINGS_KEY = "google-oauth"
+
 
     async def _oauth_get_user_future(
         self, access_token: Dict[str, Any]
