@@ -246,6 +246,7 @@ class Es():
             name: str,
             definition: Union[str, Path, IOBase, dict],
     ):
+        LOG.debug(f"Loading role definition: `{definition}`.")
         definition = self._load_definition_object(definition, replace_prefix=True)
 
         if self.prefix:
@@ -253,6 +254,7 @@ class Es():
 
         url = f"{self.api_root}/_security/role/{name}"
 
+        LOG.debug(f"Putting role definition: {name}.")
         self.log_request("put", url)
         response = requests.put(url, json=definition, **self.request_kwargs)
         self.log_response(response)
@@ -273,12 +275,18 @@ class Es():
             name: str,
             definition: Union[str, Path, IOBase, dict],
     ):
+        message = definition
+        if isinstance(message, dict):
+            message = ", ".join(message["roles"])
+
+        LOG.debug(f"Loading user definition: `{message}`.")
         definition = self._load_definition_object(definition, replace_prefix=True)
 
         name = self.user_name(name)
 
         url = f"{self.api_root}/_security/user/{name}"
 
+        LOG.debug(f"Putting user definition: {name}.")
         self.log_request("put", url)
         response = requests.put(url, json=definition, **self.request_kwargs)
         self.log_response(response)
@@ -757,6 +765,66 @@ def put_users(
 
 
 
+def get_users(
+        es: Es,
+):
+    url = f"{es.api_root}/_security/user/"
+
+    response = requests.get(url, **es.request_kwargs)
+    if response.status_code != 200:
+        LOG.error(query_error(response))
+        raise EsException("Failed to get ES users.")
+
+    data = response.json()
+
+    for user in data:
+        if not user.startswith(es.prefix):
+            continue
+
+        print(f"user: {user}")
+        for k, v in data[user].items():
+            if not v:
+                continue
+            if k == "roles":
+                v = ", ".join(v)
+            print(f"  {k:16}: {v}")
+        print()
+
+
+
+def get_roles(
+        es: Es,
+):
+    url = f"{es.api_root}/_security/role/"
+
+    response = requests.get(url, **es.request_kwargs)
+    if response.status_code != 200:
+        LOG.error(query_error(response))
+        raise EsException("Failed to get ES roless.")
+
+    data = response.json()
+
+    for role in data:
+        if not role.startswith(es.prefix):
+            continue
+
+
+        print(f"role: {role}")
+        for index in data[role]["indices"]:
+            names = index.pop("names")
+            print(f"  index: {', '.join(names)}")
+            for k, v in index.items():
+                if not v:
+                    continue
+
+                if isinstance(v, list):
+                    v = ", ".join(v)
+
+                print(f"    {k:14}: {v}")
+            print()
+
+
+
 def create_manage_parser(desc: str) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=desc)
 
@@ -844,3 +912,9 @@ def manage_main(
 
     if "put-indices" in args.command:
         put_indices(es, indices)
+
+    if "get-users" in args.command:
+        get_users(es)
+
+    if "get-roles" in args.command:
+        get_roles(es)
