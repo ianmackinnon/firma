@@ -1,5 +1,3 @@
-import sys
-import enum
 import json
 import logging
 import argparse
@@ -7,7 +5,7 @@ import warnings
 from getpass import getpass
 from io import IOBase
 from difflib import ndiff
-from typing import Union, Callable
+from typing import Union
 from pathlib import Path
 from urllib.parse import urlparse, urlunparse
 
@@ -89,9 +87,9 @@ def get_conf(
         if data["ssl_cert"].lower() == "false":
             data["ssl_cert"] = False
 
-    if admin_conf := config.get("elasticsearch-admin", "username", fallback=None):
+    if username := config.get("elasticsearch-admin", "username", fallback=None):
         data["user_admin"] = {
-            "username": config.get("elasticsearch-admin", "username", fallback=None),
+            "username": username,
             "password": config.get("elasticsearch-admin", "password", fallback=None),
             "role": config.get("elasticsearch-admin", "role", fallback=None),
         }
@@ -100,7 +98,7 @@ def get_conf(
         if api_root := kwargs.get("api_root", None):
             data["api_root"] = api_root
         if api_prefix := kwargs.get("prefix", None):
-            data["prefis"] = prefix
+            data["prefix"] = api_prefix
 
     assert data["prefix"]
 
@@ -191,26 +189,22 @@ class Es():
 
         if self.request_log_format in ("console", "console_req"):
             path = url[len(self.api_root):]
-            msg = " REQUEST\n%s %s" % (method.upper(), path)
+            msg = f" REQUEST\n{method.upper()} {path}"
             if data:
                 if nd:
                     for item in data.split("\n"):
-                        msg += "\n%s" % json.dumps(item, indent=2)
+                        msg += f"\n{json.dumps(item, indent=2)}"
                 else:
-                    msg += "\n%s" % json.dumps(data, indent=2)
+                    msg += f"\n{json.dumps(data, indent=2)}"
         elif self.request_log_format in ("curl", "cur_req"):
             ct = MIME_NEWLINE_DELIMITED_JSON if nd else MIME_JSON
-            msg = " REQUEST\ncurl -v -X %s -H %s %s" % (
-                method.upper(),
-                f"Content-Type='{ct}; charset=UTF-8'",
-                url
-            )
+            msg = f" REQUEST\ncurl -v -X {method.upper()} -H Content-Type='{ct}; charset=UTF-8' {url}"
             if data:
                 msg += "-d '"
                 if nd:
                     msg += data
                 else:
-                    msg += "s" % json.dumps(data, indent=2)
+                    msg += json.dumps(data, indent=2)
                 msg += "'"
 
         self.request_log.info(msg)
@@ -223,10 +217,10 @@ class Es():
         if "req" in self.request_log_format:
             return
 
-        msg = " RESPONSE %s" % (response.status_code)
+        msg = f" RESPONSE {response.status_code}"
         data = response.json()
         if data:
-            msg += "\n%s" % json.dumps(data, indent=2)
+            msg += f"\n{json.dumps(data, indent=2)}"
 
         self.request_log.info(msg)
 
@@ -338,7 +332,7 @@ class Es():
         if isinstance(definition, str):
             definition = Path(definition)
         if isinstance(definition, Path):
-            text = definition.read_text()
+            text = definition.read_text(encoding="utf-8")
             if self.prefix and replace_prefix:
                 text = text.replace("{PREFIX}", f"{self.prefix}-")
             definition = json.loads(text)
@@ -415,7 +409,7 @@ class Es():
         url = self.api_root
         if index is not None:
             url += "/" + index
-        url += "/%d" % document_id
+        url += f"/{document_id}"
 
         self.log_request("get", url)
         response = requests.get(url, **self.request_kwargs)
@@ -454,7 +448,7 @@ class Es():
         if response.status_code != 200:
             LOG.error(query_error(response))
             raise EsException(
-                "Failed to create ES index `%s`." % name,
+                "Failed to create ES index `{name}`.",
                 response=response)
         LOG.info("Created ES index `%s`.", name)
 
@@ -479,7 +473,7 @@ class Es():
         elif response.status_code != 200:
             LOG.error(query_error(response))
             raise EsException(
-                "Failed to delete ES index `%s`." % name,
+                "Failed to delete ES index `{name}`.",
                 response=response)
         else:
             LOG.info("Deleted ES index `%s`.", name)
@@ -507,8 +501,7 @@ class Es():
         self.log_response(response)
         if not str(response.status_code).startswith("2"):
             LOG.error(query_error(response))
-            raise EsException(
-                "Failed to index document `%s`." % response.status_code)
+            raise EsException(f"Failed to index document `{response.status_code}`.")
 
 
     def delete(
@@ -526,8 +519,7 @@ class Es():
         self.log_response(response)
         if not str(response.status_code).startswith("2"):
             LOG.error(query_error(response))
-            raise EsException(
-                "Failed to delete document `%s`." % response.status_code)
+            raise EsException(f"Failed to delete document `{response.status_code}`.")
 
 
     def delete_all(
@@ -535,7 +527,7 @@ class Es():
             index_name: str,
     ) -> None:
         index_name = self._calc_index_name(index_name)
-        url = self._calc_url(index_name) + f"/_delete_by_query"
+        url = self._calc_url(index_name) + "/_delete_by_query"
 
         query = {
             "query": {
@@ -544,14 +536,13 @@ class Es():
         }
 
         # Create a new index with our index definition
-        LOG.info("deleting document.")
+        LOG.info("deleting all documents in {index_name}.")
         self.log_request("delete", url)
         response = requests.post(url, json=query, **self.request_kwargs)
         self.log_response(response)
         if not str(response.status_code).startswith("2"):
             LOG.error(query_error(response))
-            raise EsException(
-                "Failed to delete document `%s`." % response.status_code)
+            raise EsException(f"Failed to delete document `{response.status_code}`.")
 
 
     def mapping(
