@@ -703,6 +703,8 @@ class BaseHandler(tornado.web.RequestHandler):
 
         sys.stdout.flush()
 
+
+    def set_default_headers(self):
         if self.settings.options.cors == "all":
             self.set_header("Access-Control-Allow-Origin", "*")
 
@@ -733,8 +735,10 @@ class BaseHandler(tornado.web.RequestHandler):
 
         if self.settings.options.cors == "all":
             self.set_header("Access-Control-Allow-Methods", allow)
-            self.set_header("Access-Control-Allow-Origin", "*")
             self.set_header("Access-Control-Allow-Headers", ",".join([
+                "X-Forwarded-Proto",
+                "X-Forwarded-Host",
+                "X-Forwarded-Port",
                 "X-Requested-With",
                 "Authorization",
                 "Content-Type",
@@ -1390,8 +1394,6 @@ class UserMixin(object):
             return None
 
         return valid_totp(token, self.onetime_secret)
-
-
 
 
 
