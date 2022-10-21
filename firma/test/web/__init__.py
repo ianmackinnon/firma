@@ -133,8 +133,6 @@ def pytest_addoption(parser):
 
 
 def pytest_configure(config):
-    print("firma pytest_configure")
-
     if config.option.mode:
         # Dotenv files will only be sought in the current working directory.
         config.option.env = load_env_app(Path("."), mode=config.option.mode)

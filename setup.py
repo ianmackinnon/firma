@@ -37,6 +37,7 @@ setuptools.setup(
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
     ],
+    python_requires='>=3',
     install_requires=[
         "jsonschema",
         "humanize",
@@ -53,7 +54,11 @@ setuptools.setup(
         "tornado",
         "unidecode",
     ],
-    python_requires='>=3',
+    package_data={
+        "firma": [
+            "static/js/firma.js",
+        ],
+    },
     scripts=[
         "scripts/firma-mysql",
         "scripts/firma-env",
