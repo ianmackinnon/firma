@@ -36,8 +36,12 @@ from onetimepass import get_totp
 import pytest
 import jsonschema
 
-from firma.browser import \
-    SeleniumDriver
+from firma.web import (
+    load_env_app,
+)
+from firma.browser import (
+    SeleniumDriver,
+)
 
 
 
@@ -112,6 +116,7 @@ def pytest_addoption(parser):
     parser.addoption("--driver", action="store")
     parser.addoption("--driver-path", action="store")
     parser.addoption("--driver-timeout", action="store", type=float, default=5)
+    parser.addoption("--mode", action="store")
     parser.addoption("--profile", action="store_true")
     parser.addoption("--server-retry", action="store_true")
     parser.addoption("--hide-header", action="store_true")
@@ -127,18 +132,17 @@ def pytest_addoption(parser):
 
 
 
-def pytest_sessionstart(session):
-    global VC_ID, DURATION_LOG
+def pytest_configure(config):
+    print("firma pytest_configure")
 
-    VC_ID = get_vc_id()
-    if session.config.option.log_dir:
-        DURATION_LOG = get_duration_log(session.config.option.log_dir)
+    if config.option.mode:
+        # Dotenv files will only be sought in the current working directory.
+        config.option.env = load_env_app(Path("."), mode=config.option.mode)
 
-    if session.config.option.hide_header:
-        session.verbose = session.config.option.verbose
-        session.config.option.verbose = -1
+    if config.option.base_url is None:
+        config.option.base_url = config.option.env.get("BASE_URL", None)
 
-    ssl_cert_list = session.config.getoption("--ssl-cert")
+    ssl_cert_list = config.getoption("--ssl-cert")
     if ssl_cert_list:
         ssl_cert_lookup = []
         for item in ssl_cert_list:
@@ -153,7 +157,20 @@ def pytest_sessionstart(session):
                 "path": cert_path,
             })
 
-        session.config.option.ssl_cert_lookup = ssl_cert_lookup
+        config.option.ssl_cert_lookup = ssl_cert_lookup
+
+
+
+def pytest_sessionstart(session):
+    global VC_ID, DURATION_LOG
+
+    VC_ID = get_vc_id()
+    if session.config.option.log_dir:
+        DURATION_LOG = get_duration_log(session.config.option.log_dir)
+
+    if session.config.option.hide_header:
+        session.verbose = session.config.option.verbose
+        session.config.option.verbose = -1
 
 
 
@@ -230,6 +247,7 @@ def pytest_collection_modifyitems(
 
 @pytest.fixture(scope="session")
 def base_url(request):
+    base_url = request.config.option.base_url
     if request.config.option.base_url.endswith("/"):
         pytest.fail("Option `base_url` may not end in a slash")
     return request.config.option.base_url

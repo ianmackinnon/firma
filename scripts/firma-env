@@ -1,0 +1,75 @@
+#!/usr/bin/env python3
+
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+import sys
+import logging
+import argparse
+
+from pathlib import Path
+
+from firma.util import (
+    init_logs,
+)
+from firma.web import (
+    load_env_app,
+)
+
+
+LOG = logging.getLogger('env')
+
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Print .env variables.")
+
+    parser.add_argument(
+        "--verbose", "-v",
+        action="count", default=0,
+        help="Print verbose information for debugging.")
+    parser.add_argument(
+        "--quiet", "-q",
+        action="count", default=0,
+        help="Suppress warnings.")
+
+    parser.add_argument(
+        "--env", "-E",
+        action="store", dest="env_path",
+        type=Path,
+        default=Path("."),
+        help="Path to directory of .env files.")
+    parser.add_argument(
+        "--mode", "-M",
+        action="store",
+        help="Application mode.")
+
+    parser.add_argument(
+        "key",
+        metavar="KEY",
+        action="store",
+        help="Variable name.")
+
+    args = parser.parse_args()
+    init_logs(LOG, args=args)
+
+    env = load_env_app(args.env_path, mode=args.mode)
+    value = env.get(args.key, None)
+    if value is not None:
+        print(value)
+
+
+
+if __name__ == "__main__":
+    main()

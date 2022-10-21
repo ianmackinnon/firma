@@ -17,20 +17,31 @@ import sys
 import logging
 import argparse
 
+from pathlib import Path
+
 import pymysql
 
-from firma.storage.mysql import \
-    get_conf, \
-    mysql_test, \
-    mysql_create, \
-    mysql_source, \
-    mysql_empty, \
-    mysql_drop_triggers, \
-    mysql_drop, \
-    mysql_update_users, \
-    mysql_generate_conf, \
-    get_admin_cursor, \
-    get_root_cursor
+from firma.util import (
+    init_logs,
+)
+from firma.storage.mysql import (
+    MYSQL_ERROR,
+    env_accounts,
+    load_env,
+    mysql_test,
+    mysql_create,
+    mysql_source,
+    mysql_empty,
+    mysql_drop_triggers,
+    mysql_drop_users,
+    mysql_drop_database,
+    mysql_create_users,
+    mysql_generate_conf,
+    get_root_cursor,
+    get_account_cursor,
+    verify_mysql_name,
+    verify_mysql_user,
+)
 
 
 
@@ -39,78 +50,82 @@ LOG = logging.getLogger('mysql')
 
 
 def main_functions(
-        conf_path,
-        key=None, purge=False, empty=False, drop_triggers=False,
+        env_path: Path,
+        purge=False, empty=False, drop_triggers=False,
         account=None, generate=False, generate_dump=False, update_users=False,
         test=False, source=None):
     # pylint: disable=too-many-return-statements
 
-    options = get_conf(conf_path)
+    env = load_env(env_path)
 
-    if key:
-        print((getattr(options, key)))
-        return None
+    accounts = env_accounts(env)
+
+    verify_mysql_name(env, "DB_NAME")
+    for v in accounts:
+        verify_mysql_user(env, v)
 
     if generate or generate_dump:
-        return mysql_generate_conf(
-            options, account=account, dump=generate_dump)
+        return mysql_generate_conf(env, account=account, dump=generate_dump)
 
     if test:
-        if mysql_test(options):
+        if mysql_test(env, accounts):
             pass
         else:
             LOG.error("Database and users not correctly set up.")
             sys.exit(1)
 
     if source or empty or drop_triggers:
-        cursor = get_admin_cursor(options)
+        cursor = get_account_cursor(env, account)
     elif (purge or update_users):
         cursor = get_root_cursor()
     else:
         # Use the MySQL root account
-        return mysql_create(options)
+        return mysql_create(env, accounts)
 
+    if purge:
+        # Further purge commands later in this function
+        mysql_drop_users(cursor, env, accounts)
+
+    # Connect to DB
     try:
-        cursor.execute("use %s" % options.database)
-    except pymysql.err.InternalError as e:
-        if str(e).startswith("(1049,"):
-            # Database does not exist
+        cursor.execute(f"use {env['DB_NAME']}")
+    except pymysql.err.OperationalError as e:
+        if e.args[0] == MYSQL_ERROR["DB_NO_EXIST"]:
             if purge:
                 LOG.warning(
                     "Database '%s' does not exist. Nothing to do.",
-                    options.database)
+                    env['DB_NAME'])
                 return
-            LOG.error(
-                "Database '%s' does not exist.",
-                options.database)
+            LOG.error("Database '%s' does not exist.", env['DB_NAME'])
             sys.exit(1)
-        raise e
+        else:
+            raise e
 
 
     if source:
         return mysql_source(cursor, source)
 
     if empty:
-        return mysql_empty(cursor, options.database)
+        return mysql_empty(cursor, env)
 
     if drop_triggers:
-        return mysql_drop_triggers(cursor, options)
+        return mysql_drop_triggers(cursor, env)
 
     if purge:
-        return mysql_drop(cursor, options)
+        mysql_drop_database(cursor, env["DB_NAME"])
+        return
 
     if update_users:
-        return mysql_update_users(cursor, options)
+        return mysql_create_users(cursor, env, accounts)
 
     raise Exception("No action specified")
 
 
 
 def main():
-    LOG.addHandler(logging.StreamHandler())
-
     parser = argparse.ArgumentParser(
-        description="Create MySQL database and users.")
+        description="Manage MySQL database and users.")
+
     parser.add_argument(
         "--verbose", "-v",
         action="count", default=0,
@@ -120,10 +135,6 @@ def main():
         action="count", default=0,
         help="Suppress warnings.")
 
-    parser.add_argument(
-        "--key", "-k",
-        action="store",
-        help="Print a configuration key")
     parser.add_argument(
         "--test", "-t",
         action="store_true", default=False,
@@ -162,18 +173,21 @@ def main():
         help="Source SQL.")
 
     parser.add_argument(
-        "conf_path", metavar="CONF",
-        help="Path to configuration file.")
+        "--env", "-E",
+        action="store", dest="env_path",
+        type=Path,
+        help="Path to directory of .env files.")
 
     args = parser.parse_args()
+    init_logs(LOG, args=args)
 
-    level = (logging.ERROR, logging.WARNING, logging.INFO, logging.DEBUG)[
-        max(0, min(3, 1 + args.verbose - args.quiet))]
-    LOG.setLevel(level)
+
+    if args.account:
+        args.account = args.account.upper()
+
 
     main_functions(
-        args.conf_path,
-        key=args.key,
+        args.env_path,
         purge=args.purge,
         empty=args.empty,
         drop_triggers=args.drop_triggers,

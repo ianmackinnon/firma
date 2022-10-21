@@ -17,13 +17,13 @@ import sys
 import shutil
 import logging
 import traceback
-import configparser
 from typing import Union
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from contextlib import contextmanager
 
 import sqlparse
+from dotenv import dotenv_values
 from unidecode import unidecode
 
 
@@ -213,21 +213,8 @@ def init_logs(*logs, args=None):
 
 
 
-def load_conf(path: Union[Path, str]) -> configparser.ConfigParser:
-    # pylint: disable=protected-access
-    # Storing config path in protected variable
-
-    if not isinstance(path, Path):
-        path = Path(path)
-
-    if not path.is_file():
-        LOG.error("%s: File not found", str(path))
-        sys.exit(1)
-
-    config = configparser.ConfigParser()
-    config.read(str(path))
-    config._load_path = str(path)
-    return config
+def load_env_multi(path_list):
+    return {k: v for path in path_list for k, v in dotenv_values(path).items()}
 
 
 

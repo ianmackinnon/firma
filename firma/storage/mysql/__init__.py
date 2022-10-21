@@ -15,181 +15,150 @@ import re
 import sys
 import getpass
 import logging
-import configparser
+
 from pathlib import Path
 from hashlib import sha1
-from collections import namedtuple
 
 import pymysql
 from sqlalchemy import event
 
-from firma.util import load_conf
-
+from firma.util import (
+    load_env_multi,
+)
 
 LOG = logging.getLogger('mysql')
 
-Options = namedtuple(
-    "Options",
-    [
-        "database",
-        "app_username",
-        "app_password",
-        "app_privileges",
-        "admin_username",
-        "admin_password",
-        "admin_privileges",
-    ]
-)
+
+
+MYSQL_ERROR = {
+    "DB_NO_EXIST_DROP": 1008,
+    "ACCESS_DENIED_CREDS": 1045,
+    "DB_NO_EXIST": 1049,
+    "USER_NO_EXIST_DROP": 1396,
+    "ACCESS_DENIED_CONFIG": 1698,
+    "CONNECTION_FAILED": 2003,
+}
 
 
 
-def verify(string, section, name):
+def verify_mysql_name(env: dict, key: str):
+    try:
+        string = env[key]
+    except KeyError:
+        return
+
     if not re.match("[0-9A-Za-z_]*$", string):
         LOG.error("Error: '%s' is invalid.", string)
-        LOG.error(
-            "%s:%s should only contain digits, ASCII letters and underscores.",
-            section, name)
-        LOG.error(
-            "Anything else can cause problems for some versions of MySQL.")
+        LOG.error("%s should only contain digits, ASCII letters and underscores.", key)
+        LOG.error("Anything else can cause problems for some versions of MySQL.")
         sys.exit(1)
     if len(string) > 16:
-        LOG.error(
-            "Error: %s:%s may be a maximum of 16 characters.", section, name)
-        LOG.error(
-            "Anything else can cause problems for some versions of MySQL.")
+        LOG.error("Error: %s may be a maximum of 16 characters.", key)
+        LOG.error("Anything else can cause problems for some versions of MySQL.")
         sys.exit(1)
+
+
+
+def verify_mysql_user(env: dict, account: str):
+    verify_mysql_name(env, user_name(account))
+    verify_mysql_name(env, user_pass(account))
 
 
 
 def split(text):
     values = []
-    for value in text.split(","):
-        value = value.strip()
-        if value:
-            values.append(value)
+    parts = re.split(r"( on [^,]+),\s*", text, flags=re.I) + [""]
+
+    for i in range(0, len(parts), 2):
+        value = "".join(parts[i:i + 2])
+        values.append(value)
+
     return values
 
 
 
-def get_conf(path):
-    config = load_conf(path)
-
-    names = load_database_names(config)
-
-    database = names["default"]
-
-    try:
-        app_username = config.get("mysql-app", "username")
-        app_password = config.get("mysql-app", "password")
-        app_privileges = config["mysql-app"].get("privileges", None)
-        if app_privileges:
-            app_privileges = replace_database_names(names, app_privileges)
-            app_privileges = split(app_privileges)
-        else:
-            app_privileges = []
-    except:
-        app_username = None
-        app_password = None
-        app_privileges = None
-    else:
-        verify(app_username, "mysql-app", "username")
-        verify(app_password, "mysql-app", "password")
-
-    admin_username = config.get("mysql-admin", "username")
-    admin_password = config.get("mysql-admin", "password")
-    admin_privileges = config["mysql-admin"].get("privileges", None)
-    if admin_privileges:
-        admin_privileges = replace_database_names(names, admin_privileges)
-        admin_privileges = split(admin_privileges)
-    else:
-        admin_privileges = []
-
-    verify(database, "mysql", "default")
-    verify(admin_username, "mysql-admin", "username")
-    verify(admin_password, "mysql-admin", "password")
-
-    options = Options(
-        database,
-        app_username,
-        app_password,
-        app_privileges,
-        admin_username,
-        admin_password,
-        admin_privileges,
-    )
-
-    return options
+def user_name(account):
+    return f"DB_USER_{account}_NAME"
 
 
 
-def replace_database_names(names, text):
-    """
-    Accepts either a "format" style string with database names
-    in curly braces, or a solitary database name.
-    """
-    if re.compile(r"^[a-z-]+$").match(text):
-        text = "{%s}" % text
-    return text.format(**names)
+def user_pass(account):
+    return f"DB_USER_{account}_PASS"
 
 
 
-def load_database_names(conf):
-    """
-    Accepts string or config instance.
-    """
-    # pylint: disable=protected-access
-    # Storing file path in config object.
-
-    if isinstance(conf, (str, Path)):
-        config = load_conf(str(conf))
-    else:
-        assert isinstance(conf, configparser.ConfigParser)
-        config = conf
-
-    names = {}
-    for key in config["mysql"]:
-        if key == "default":
-            continue
-        names[key] = config.get("mysql", key)
-
-    default = config["mysql"].get("default")
-    if default:
-        names["default"] = replace_database_names(names, default)
-
-    return names
+def user_privs(account):
+    return f"DB_USER_{account}_PRIVS"
 
 
 
-def mysql_connection_url(username, password, database,
-                         host=None, port=None):
-    login = "%s:%s@" % (username, password)
+def env_accounts(env):
+    name_set = dict()
+    pass_set = dict()
+    priv_set = dict()
+
+    for k in env:
+        if match := re.match(r"DB_USER_([A-Z]{2,8})_(NAME|PASS|PRIVS)$", k):
+            account, item = match.groups()
+            if item == "NAME":
+                name_set[account] = True
+            elif item == "PASS":
+                pass_set[account] = True
+            else:
+                priv_set[account] = True
+
+    if not (name_set == pass_set == priv_set):
+        LOG.error(".env DB user variables do not fully match:")
+        LOG.error("DB_USER_..._NAME:  %s", ", ".join(name_set))
+        LOG.error("DB_USER_..._PASS:  %s", ", ".join(pass_set))
+        LOG.error("DB_USER_..._PRIVS: %s", ", ".join(priv_set))
+        sys.exit(1)
+
+    if not name_set:
+        LOG.error("No .env DB user variables are defined.")
+        sys.exit(1)
+
+    return list(name_set)
+
+
+
+def load_env(env_path: Path):
+    return load_env_multi([
+        env_path / ".env",
+        env_path / ".env.local",
+    ])
+
+
+
+def connection_url(username, password, database, host=None, port=None):
+    login = f"{username}:{password}@"
 
     if host is None:
         host = "localhost"
     if host == "localhost":
         host = "127.0.0.1"  # Prevents MySQL from using a socket
     if port is not None:
-        host += ":%d" % port
+        host += ":{port}"
 
-    path = "/%s?charset=utf8" % database
+    path = f"/{database}?charset=utf8"
 
-    return "mysql+pymysql://%s%s%s" % (login, host, path)
-
-
-
-def connection_url_admin(conf_path, host=None, port=None):
-    options = get_conf(conf_path)
-    return mysql_connection_url(
-        options.admin_username, options.admin_password, options.database,
-        host=host, port=port)
+    return f"mysql+pymysql://{login}{host}{path}"
 
 
 
-def connection_url_app(conf_path, host=None, port=None):
-    options = get_conf(conf_path)
-    return mysql_connection_url(
-        options.app_username, options.app_password, options.database,
-        host=host, port=port)
+def mysql_connection_url(
+        env: dict,
+        account: str,
+        host=None,
+        port=None
+):
+    return connection_url(
+        env[user_name(account)],
+        env[user_pass(account)],
+        env["DB_NAME"],
+        host=host,
+        port=port
+    )
 
 
 
@@ -223,65 +192,74 @@ def engine_set_optimizer_switch(engine, key, value):
 
 def drop_user(cursor, username):
     try:
-        cursor.execute("drop user '%s'@'localhost';" % username)
-        LOG.debug("User %s dropped.", username)
+        cursor.execute(f"drop user '{username}'@'localhost';")
+        LOG.debug(f"User `{username}` dropped.")
     except pymysql.err.OperationalError as e:
-        if e.args[0] != 1396:
+        if e.args[0] == MYSQL_ERROR["USER_NO_EXIST_DROP"]:
+            LOG.debug(f"User `{username}` did not exist.")
+        else:
             raise e
-        LOG.debug("User %s did not exist.", username)
 
 
-
-def create_user(cursor, username, password, privileges):
+def create_user(cursor, username: str, password: str, privs: list):
     drop_user(cursor, username)
-    user = "'%s'@'localhost'" % username
-    cursor.execute("create user %s identified by '%s';" % (user, password))
-    for privilege in privileges:
-        cursor.execute("grant %s.* to %s;" % (privilege, user))
-    LOG.debug("User %s created with permissions.", username)
+    user_full = f"'{username}'@'localhost'"
+    cmd = f"create user {user_full} identified by '{password}';"
+    LOG.debug(cmd)
+    cursor.execute(cmd)
+    for priv in privs:
+        cmd = f"grant {priv}.* to {user_full};"
+        LOG.debug(cmd)
+        cursor.execute(cmd)
+    LOG.debug(f"User `{username}` created with permissions.")
 
 
 
-def drop_database(cursor, name):
+
+def mysql_drop_users(cursor, env, accounts):
+    for account in accounts:
+        drop_user(cursor, env[user_name(account)])
+
+
+
+def mysql_drop_database(cursor, name):
     try:
         cursor.execute("drop database %s;" % name)
         LOG.debug("Databse %s dropped.", name)
     except pymysql.err.OperationalError as e:
-        if e.args[0] != 1008:
+        if e.args[0] == MYSQL_ERROR["DB_NO_EXIST_DROP"]:
+            LOG.debug("Database %s did not exist.", name)
+        else:
             raise e
-        LOG.debug("Database %s did not exist.", name)
 
 
 
-def mysql_drop(cursor, options):
-    drop_user(cursor, options.admin_username)
-    drop_user(cursor, options.app_username)
-    drop_database(cursor, options.database)
+def mysql_create_users(cursor, env, accounts):
+    for account in accounts:
+        privs = []
+
+        priv_str = env.get(user_privs(account), None)
+        if priv_str:
+            privs += split(priv_str.format(**env))
+
+        create_user(cursor, env[user_name(account)], env[user_pass(account)], privs)
 
 
 
-def mysql_update_users(cursor, options):
-    if options.app_username:
-        create_user(cursor, options.app_username, options.app_password, [
-            "select, insert, update, delete on %s" % options.database,
-        ] + options.app_privileges)
-
-    create_user(cursor, options.admin_username, options.admin_password, [
-        "all privileges on %s" % options.database,
-        # "reload on %s" % options.database,
-    ] + options.admin_privileges)
+# Database utility functions
 
 
-# Checksum
 
-def database_hash(conf_path):
-    options = get_conf(conf_path)
+def database_hash(
+        env: dict,
+        account: str,
+):
 
     db_options = {
         "host": "localhost",
-        "user": options.app_username,
-        "passwd": options.app_password,
-        "database": options.database,
+        "user": env[user_name(account)],
+        "passwd": env[user_pass(account)],
+        "database": env["DB_NAME"],
     }
 
     try:
@@ -308,23 +286,23 @@ def database_hash(conf_path):
 
 
 
-# Configuration
+# Database configuration file functions
 
 
 
-def mysql_generate_conf(options, account=None, dump=False):
-    if account is None:
-        account = "admin"
-    assert account in ("admin", "app")
-
+def mysql_generate_conf(
+        env: dict,
+        account: str,
+        dump: bool = False
+):
     if dump:
         sys.stdout.write( \
 """[client]
 user=%s
 password=%s
 """ % (
-    getattr(options, account + "_username"),
-    getattr(options, account + "_password")
+    env[user_name(account)],
+    env[user_pass(account)],
 ))
     else:
         sys.stdout.write( \
@@ -333,9 +311,9 @@ database=%s
 user=%s
 password=%s
 """ % (
-    options.database,
-    getattr(options, account + "_username"),
-    getattr(options, account + "_password")
+    env["DB_NAME"],
+    env[user_name(account)],
+    env[user_pass(account)],
 ))
 
 
@@ -344,8 +322,7 @@ def get_cursor(db_options):
     try:
         connection = pymysql.connect(**db_options)
     except pymysql.err.OperationalError as e:
-        if str(e).startswith("(1045,"):
-            # Access denied
+        if e.args[0] == MYSQL_ERROR["ACCESS_DENIED_CREDS"]:
             if "using password: NO" in str(e):
                 LOG.error("Could not access database. No password was supplied.")
                 sys.exit(1)
@@ -355,7 +332,7 @@ def get_cursor(db_options):
                 LOG.error("-   User password may not have been initialized.")
                 LOG.error("-   MySql Root account may be disabled for non-root OS users.")
                 sys.exit(1)
-        if str(e).startswith("(1698,"):
+        if e.args[0] == MYSQL_ERROR["ACCESS_DENIED_CONFIG"]:
             # Access denied
             # This is the error that occurs if we try to initialize the database
             # when MaríaDB has been installed but not setup yet.
@@ -365,7 +342,7 @@ def get_cursor(db_options):
             if "root" in str(e):
                 LOG.error("-   MySql Root account may be disabled for non-root OS users.")
             sys.exit(1)
-        if str(e).startswith("(2003,"):
+        if e.args[0] == MYSQL_ERROR["CONNECTION_FAILED"]:
             # Cannot connect
             LOG.error("Could not connect to MySQL server at localhost.")
             LOG.error("-   Check the server is running. `ps -ef | grep mysql`.")
@@ -391,80 +368,74 @@ def get_root_cursor():
 
 
 
-def get_admin_cursor(options):
+def get_account_cursor(env, account):
     return get_cursor({
         "host": "localhost",
-        "user": options.admin_username,
-        "passwd": options.admin_password,
+        "user": env[user_name(account)],
+        "passwd": env[user_pass(account)],
         # "unix_socket": "/var/run/mysqld/mysqld.sock",
     })
 
 
 
-def mysql_create(options):
-    if mysql_test(options):
+def mysql_create(
+        env: dict,
+        accounts: list
+):
+    if mysql_test(env, accounts):
         LOG.info("Database and users already correctly set up. Nothing to do.")
         return
 
     cursor = get_root_cursor()
 
     try:
-        cursor.execute("use %s;" % options.database)
+        cursor.execute(f"use {env['DB_NAME']};")
     except pymysql.err.OperationalError as e:
-        if e.args[0] != 1049:
+        if e.args[0] == MYSQL_ERROR["DB_NO_EXIST"]:
+            LOG.debug(f"Database {env['DB_NAME']} does not exist.")
+
+            cursor.execute(f"""create database {env['DB_NAME']}
+DEFAULT CHARACTER SET = utf8
+DEFAULT COLLATE = utf8_bin;""")
+
+            cursor.execute(f"use {env['DB_NAME']};")
+        else:
             raise e
 
-        LOG.debug("Database %s does not exist.", options.database)
 
-        cursor.execute("""create database %s
-DEFAULT CHARACTER SET = utf8
-DEFAULT COLLATE = utf8_bin;""" % options.database)
+    LOG.debug(f"Database {env['DB_NAME']} exists.")
 
-        cursor.execute("use %s;" % options.database)
-
-    LOG.debug("Database %s exists.", options.database)
-
-    if options.app_username:
-        create_user(cursor, options.app_username, options.app_password, [
-            "select, insert, update, delete on %s" % options.database,
-        ] + options.app_privileges)
-
-    create_user(cursor, options.admin_username, options.admin_password, [
-        "all privileges on %s" % options.database,
-        # "reload on %s" % options.database,
-    ] + options.admin_privileges)
+    mysql_create_users(cursor, env, accounts)
 
 
 
-def mysql_test(options):
+def mysql_test(
+        env: dict,
+        accounts: list
+):
     """Returns True if successful, False if unsuccessful."""
+
     status = True
 
-    assert options.app_username or options.admin_username
+    assert accounts
 
-    if options.app_username:
+    database = env['DB_NAME']
+
+    for account in accounts:
+        username = env[user_name(account)]
+        message = f"database `{database}` as `{account}` user `{username}`."
         try:
             pymysql.connect(
                 host="localhost",
-                user=options.app_username,
-                passwd=options.app_password,
-                db=options.database,
+                user=env[user_name(account)],
+                passwd=env[user_pass(account)],
+                db=env["DB_NAME"],
             )
         except pymysql.err.OperationalError:
             status = False
-            LOG.debug("Could not connect as app user.")
-
-    if options.admin_username:
-        try:
-            pymysql.connect(
-                host="localhost",
-                user=options.admin_username,
-                passwd=options.admin_password,
-                db=options.database,
-            )
-        except pymysql.err.OperationalError:
-            status = False
-            LOG.debug("Could not connect as admin user.")
+            LOG.debug(f"Could not connect to {message}.")
+        else:
+            LOG.debug("Successfully connected to {message}.")
 
     return status
 
@@ -518,16 +489,15 @@ where trigger_schema = '%s';""", database)
 
 
 
-def mysql_empty(cursor, database):
-    drop_database_tables(cursor, database)
+def mysql_empty(cursor, env):
+    drop_database_tables(cursor, env["DB_NAME"])
 
 
 
-def mysql_drop_triggers(cursor, options):
-    drop_database_triggers(cursor, options.database)
+def mysql_drop_triggers(cursor, env):
+    drop_database_triggers(cursor, env["DB_NAME"])
 
 
 
 def mysql_source(cursor, source):
-    sql = open(source).read()
-    cursor.execute(sql)
+    cursor.execute(Path(source).read_text("utf-8"))

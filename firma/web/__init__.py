@@ -21,14 +21,15 @@ import errno
 import bisect
 import base64
 import hashlib
+import asyncio
 import logging
 import datetime
 import mimetypes
-import configparser
 import email.utils
 import urllib.parse
-from pprint import pprint
+from pprint import pformat
 from typing import Any, Dict, List
+from pathlib import Path
 from subprocess import Popen, PIPE
 from collections import namedtuple
 
@@ -40,7 +41,6 @@ import tornado.web
 import tornado.auth
 import tornado.httpserver
 import tornado.options
-import tornado.ioloop
 from tornado import escape
 from tornado.log import app_log
 from tornado.web import _has_stream_request_body
@@ -49,6 +49,10 @@ from sqlalchemy import MetaData, Table
 from sqlalchemy.orm import aliased
 from sqlalchemy.exc import DatabaseError
 from sqlalchemy.orm.exc import NoResultFound
+
+from firma.util import (
+    load_env_multi,
+)
 
 
 
@@ -66,6 +70,33 @@ Host = namedtuple("Host", ("protocol", "host"))
 
 
 
+def defined(*args):
+    """
+    Return the first defined value.
+    Undefined values are `None` and `""`.
+    """
+    for arg in args:
+        if arg in (None, ""):
+            continue
+        return arg
+    return None
+
+
+
+def load_env_app(env_path: Path | str, mode: str | None = None):
+    path_list = [
+        env_path / ".env",
+        env_path / ".env.local",
+    ]
+    if mode:
+        path_list += [
+            env_path / f".env.{mode}",
+            env_path / f".env.{mode}.local",
+        ]
+    return load_env_multi(path_list)
+
+
+
 def add_samesite_cookie_support():
     # Not required for Python 3.8+
 
@@ -76,24 +107,6 @@ def add_samesite_cookie_support():
 
 
 add_samesite_cookie_support()
-
-
-
-def conf_get(ini_path, section, key, default=ARG_DEFAULT):
-    # pylint: disable=dangerous-default-value
-    # Using `[]` as default value in `get`
-
-    config = configparser.ConfigParser()
-    config.read(ini_path)
-
-    try:
-        value = config.get(section, key)
-    except configparser.NoOptionError:
-        if default == ARG_DEFAULT:
-            raise
-        return default
-
-    return value
 
 
 
@@ -184,12 +197,14 @@ class Application(tornado.web.Application):
 
         define("host", type=str, default=defaults["host"],
                help="Run as the given host")
-        define("port", type=int, default=defaults["port"],
+        define("port", type=int, default=None,
                help="run on the given port")
         define("debug", type=bool, default=None,
                help="Debug mode. Automatic reload.")
-        define("public_origin", default=None,
-               help="Public origin (protocol, hostname and port)")
+
+        define("mode", type=str, default=None,
+               help="Include dotenv configuration files matching "
+               "`.env.{mode}` and `.env.{mode}.local`")
 
         define("color", default=None,
                help="Force color format. Options are `ansi`.")
@@ -215,13 +230,19 @@ class Application(tornado.web.Application):
                 "certfile": options.ssl_cert,
                 "keyfile": options.ssl_key,
             }
-        http_server = tornado.httpserver.HTTPServer(
-            cls(),
-            xheaders=True,
-            ssl_options=ssl_options,
-        )
-        http_server.listen(options.port)
-        tornado.ioloop.IOLoop.instance().start()
+
+        async def main():
+            app = cls()
+            http_server = tornado.httpserver.HTTPServer(
+                app,
+                xheaders=True,
+                ssl_options=ssl_options,
+            )
+            http_server.listen(app.settings.port)
+
+            await asyncio.Event().wait()
+
+        asyncio.run(main())
 
 
     # Stats
@@ -513,26 +534,59 @@ class Application(tornado.web.Application):
     # Initialisation
 
 
+    def init_env(self):
+        # Dotenv files will only be sought in the current working directory.
+        self.settings.env = load_env_app(Path("."), mode=self.settings.options.mode)
+        if self.settings.options.mode:
+            self.add_stat("Mode", self.settings.options.mode)
+
+
     def init_settings(self, options):
         self.settings.options = options
+        self.init_env()
         self.settings.app = {}
         self.settings.app.log = {}
 
-        self.add_stat("Address",
-                      "http://localhost:%d" % self.settings.options.port)
+        self.label = self.settings.options.label
         if self.settings.options.label:
             self.add_stat("Label", self.settings.options.label)
 
+        self.settings.debug = bool(defined(
+            self.settings.options.debug,
+            self.settings.env.get('DEBUG', None),
+        ))
+        if self.settings.debug:
+            self.add_stat("Debug", True)
+
+        self.settings.port = defined(
+            self.settings.options.port,
+            self.settings.env.get('PORT', None),
+            DEFAULTS["port"],
+        )
+        self.add_stat("Address", f"http://localhost:{self.settings.port}")
+
+        self.settings.cors = defined(
+            self.settings.options.cors,
+            self.settings.env.get('CORS', None),
+        )
+        if self.settings.cors:
+            self.add_stat("CORS", self.settings.cors)
+
+
+
     def __init__(self, handlers, options, **settings):
+        """
+        Order of precedence:
+
+        -   `options` - command line options
+        -   `settings.env` - variables from env files (not from environment).
+        -   `settings` - app defaults
+        """
+
         assert self.name
         assert self.title
 
-        self.label = options.label
-
         self.init_stats()
-
-        if options.debug:
-            settings["debug"] = True
 
         self.settings = Settings(settings or {})
         self.init_settings(options)
@@ -557,8 +611,9 @@ class Application(tornado.web.Application):
 
         _settings = self.settings
         # Resets `self.settings`:
-        super().__init__(handlers, **settings)
+        super().__init__(handlers, **self.settings)
         self.settings = _settings
+
         self.write_stats()
 
 
@@ -568,7 +623,7 @@ class StaticFileHandler(tornado.web.StaticFileHandler):
     # pylint: disable=broad-except,using-constant-test
 
     def get(self, *args, **kwargs):
-        if self.settings.options.cors == "all":
+        if self.settings.cors == "all":
             self.set_header("Access-Control-Allow-Origin", "*")
         return super().get(*args, **kwargs)
 
@@ -576,7 +631,7 @@ class StaticFileHandler(tornado.web.StaticFileHandler):
         method_list = ("get", "head", "options")
         methods_available = set(dir(self)) & set(method_list)
         allow = ",".join([v.upper() for v in methods_available])
-        if self.settings.options.cors == "all":
+        if self.settings.cors == "all":
             self.set_header("Allow", allow)
             self.set_header("Access-Control-Allow-Origin", "*")
             self.set_header("Access-Control-Allow-Headers", "X-Requested-With")
@@ -705,7 +760,7 @@ class BaseHandler(tornado.web.RequestHandler):
 
 
     def set_default_headers(self):
-        if self.settings.options.cors == "all":
+        if self.settings.cors == "all":
             self.set_header("Access-Control-Allow-Origin", "*")
 
 
@@ -733,7 +788,7 @@ class BaseHandler(tornado.web.RequestHandler):
         allow = ",".join([v.upper() for v in methods_available])
         self.set_header("Allow", allow)
 
-        if self.settings.options.cors == "all":
+        if self.settings.cors == "all":
             self.set_header("Access-Control-Allow-Methods", allow)
             self.set_header("Access-Control-Allow-Headers", ",".join([
                 "X-Forwarded-Proto",
@@ -788,7 +843,7 @@ class BaseHandler(tornado.web.RequestHandler):
 
 
     def print_profile(self):
-        pprint(self.profile_dump)
+        print(pformat(self.profile_dump))
 
 
     # Lifecycle

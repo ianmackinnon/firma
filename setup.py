@@ -44,6 +44,7 @@ setuptools.setup(
         "pymysql",
         "pytest",
         "python-dateutil",
+        "python-dotenv",
         "redis",
         "requests",
         "selenium",
@@ -55,6 +56,7 @@ setuptools.setup(
     python_requires='>=3',
     scripts=[
         "scripts/firma-mysql",
+        "scripts/firma-env",
     ],
     setup_requires=[],
     tests_require=[],
