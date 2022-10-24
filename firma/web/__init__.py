@@ -50,9 +50,7 @@ from sqlalchemy.orm import aliased
 from sqlalchemy.exc import DatabaseError
 from sqlalchemy.orm.exc import NoResultFound
 
-from firma.util import (
-    load_env_multi,
-)
+from firma.util.env import load_env_app
 
 
 
@@ -80,20 +78,6 @@ def defined(*args):
             continue
         return arg
     return None
-
-
-
-def load_env_app(env_path: Path | str, mode: str | None = None):
-    path_list = [
-        env_path / ".env",
-        env_path / ".env.local",
-    ]
-    if mode:
-        path_list += [
-            env_path / f".env.{mode}",
-            env_path / f".env.{mode}.local",
-        ]
-    return load_env_multi(path_list)
 
 
 

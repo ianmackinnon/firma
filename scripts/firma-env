@@ -14,35 +14,16 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import sys
-import logging
 import argparse
-
 from pathlib import Path
 
-from firma.util import (
-    init_logs,
-)
-from firma.web import (
-    load_env_app,
-)
-
-
-LOG = logging.getLogger('env')
+from firma.util.env import load_env_app
 
 
 
 def main():
     parser = argparse.ArgumentParser(
         description="Print .env variables.")
-
-    parser.add_argument(
-        "--verbose", "-v",
-        action="count", default=0,
-        help="Print verbose information for debugging.")
-    parser.add_argument(
-        "--quiet", "-q",
-        action="count", default=0,
-        help="Suppress warnings.")
 
     parser.add_argument(
         "--env", "-E",
@@ -62,7 +43,6 @@ def main():
         help="Variable name.")
 
     args = parser.parse_args()
-    init_logs(LOG, args=args)
 
     env = load_env_app(args.env_path, mode=args.mode)
     value = env.get(args.key, None)

@@ -36,12 +36,8 @@ from onetimepass import get_totp
 import pytest
 import jsonschema
 
-from firma.web import (
-    load_env_app,
-)
-from firma.browser import (
-    SeleniumDriver,
-)
+from firma.util.env import load_env_app
+from firma.browser import SeleniumDriver
 
 
 

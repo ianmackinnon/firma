@@ -209,15 +209,6 @@ def init_logs(*logs, args=None):
 
 
 
-# Configuration
-
-
-
-def load_env_multi(path_list):
-    return {k: v for path in path_list for k, v in dotenv_values(path).items()}
-
-
-
 # IO
 
 

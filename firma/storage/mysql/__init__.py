@@ -22,9 +22,9 @@ from hashlib import sha1
 import pymysql
 from sqlalchemy import event
 
-from firma.util import (
-    load_env_multi,
-)
+from firma.util.env import load_env_multi
+
+
 
 LOG = logging.getLogger('mysql')
 
