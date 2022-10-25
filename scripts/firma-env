@@ -37,14 +37,32 @@ def main():
         help="Application mode.")
 
     parser.add_argument(
+        "--makefile-include",
+        action="store_true",
+        help="Print all variables in GNU Makefile format.")
+
+    parser.add_argument(
         "key",
         metavar="KEY",
         action="store",
+        nargs="?",
         help="Variable name.")
 
     args = parser.parse_args()
 
+    if not (args.makefile_include or args.key):
+        sys.stderr.write("Error: either `--makefile-include` or a variable KEY name are required.\n\n")
+        sys.stderr.flush()
+        parser.print_usage()
+        sys.exit(1)
+
     env = load_env_app(args.env_path, mode=args.mode)
+
+    if args.makefile_include:
+        for k, v in env.items():
+            print(f"{k} := {v}")
+        return
+
     value = env.get(args.key, None)
     if value is not None:
         print(value)
