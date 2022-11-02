@@ -1,3 +1,4 @@
+import re
 import json
 import logging
 import argparse
@@ -5,7 +6,7 @@ import warnings
 from getpass import getpass
 from io import IOBase
 from difflib import ndiff
-from typing import Union
+from typing import Union, Iterable
 from pathlib import Path
 from urllib.parse import urlparse, urlunparse
 
@@ -14,7 +15,7 @@ import humanize
 import requests
 from requests.auth import HTTPBasicAuth
 
-from firma.util import load_conf
+from firma.util.env import load_env_multi
 
 
 
@@ -35,6 +36,9 @@ COMMAND_LIST = {
     "index-docs",
     "delete-docs",
 }
+USERS = [
+    "ADMIN",
+]
 
 
 
@@ -63,63 +67,81 @@ def query_error(response):
 
 
 
-def get_conf(
-        path: Path,
-        **kwargs
-) -> dict:
-    config = load_conf(path)
-    if "elasticsearch" not in config:
-        raise Exception(
-            f"Section `elasticsearch` is required but not present in configuration file {str(path)}.")
+def user_name(account):
+    return f"ES_USER_{account}_NAME"
 
-    api_root = config.get("elasticsearch", "api-root", fallback=DEFAULT_API_ROOT)
-    api_root = verify_uri(api_root)
 
-    data = {
-        "api_root": api_root,
-    }
 
-    if "prefix" in config["elasticsearch"]:
-        data["prefix"] = config["elasticsearch"]["prefix"]
+def user_pass(account):
+    return f"ES_USER_{account}_PASS"
 
-    if "ssl_cert" in config["elasticsearch"]:
-        data["ssl_cert"] = config["elasticsearch"]["ssl_cert"]
-        if data["ssl_cert"].lower() == "false":
-            data["ssl_cert"] = False
 
-    if username := config.get("elasticsearch-admin", "username", fallback=None):
-        data["user_admin"] = {
-            "username": username,
-            "password": config.get("elasticsearch-admin", "password", fallback=None),
-            "role": config.get("elasticsearch-admin", "role", fallback=None),
+
+def user_role(account):
+    return f"ES_USER_{account}_ROLE"
+
+
+
+def env_accounts(env):
+    name_set = dict()
+    pass_set = dict()
+    role_set = dict()
+
+    for k in env:
+        if match := re.match(r"ES_USER_(ADMIN)_(NAME|PASS|ROLE)$", k):
+            account, item = match.groups()
+            if item == "NAME":
+                name_set[account] = True
+            elif item == "PASS":
+                pass_set[account] = True
+            else:
+                role_set[account] = True
+
+    if not (name_set == pass_set == role_set):
+        LOG.error(".env ES user variables do not fully match:")
+        LOG.error("ES_USER_..._NAME:  %s", ", ".join(name_set))
+        LOG.error("ES_USER_..._PASS:  %s", ", ".join(pass_set))
+        LOG.error("ES_USER_..._ROLE:  %s", ", ".join(role_set))
+        sys.exit(1)
+
+    if not name_set:
+        LOG.error("No .env ES user variables are defined.")
+        sys.exit(1)
+
+    return list(name_set)
+
+
+
+def load_env(env_path: Path):
+    return load_env_multi([
+        env_path / ".env",
+        env_path / ".env.local",
+    ])
+
+
+
+def get_search(
+        env: dict,
+        account: str,
+):
+    assert account in ["elastic"] + USERS
+
+    auth = None
+
+    if account == "elastic":
+        auth = account
+    else:
+        auth = {
+            "username": env[user_name(account)],
+            "password": env[user_pass(account)],
         }
 
-    if kwargs:
-        if api_root := kwargs.get("api_root", None):
-            data["api_root"] = api_root
-        if api_prefix := kwargs.get("prefix", None):
-            data["prefix"] = api_prefix
-
-    assert data["prefix"]
-
-    return data
-
-
-
-def get_search_factory(conf_path, user_key):
-    def get_search(**kwargs):
-        config = get_conf(conf_path, kwargs=kwargs)
-
-        es = Es(
-            api_root=config["api_root"],
-            prefix=config["prefix"],
-            ssl_cert=config["ssl_cert"],
-            auth=config[user_key],
-        )
-
-        return es
-
-    return get_search
+    return Es(
+        api_root=env["ES_API_ROOT"],
+        prefix=env["ES_PREFIX"],
+        ssl_cert=env.get("ES_SSL_CERT", None) or False,
+        auth=auth,
+    )
 
 
 
@@ -258,6 +280,25 @@ class Es():
         LOG.debug("OK")
 
 
+    def delete_role(
+            self,
+            name: str,
+    ):
+        if self.prefix:
+            name = f"{self.prefix}-{name}"
+
+        url = f"{self.api_root}/_security/role/{name}"
+
+        LOG.debug(f"Deleting role definition: {name}.")
+        self.log_request("delete", url)
+        response = requests.delete(url, **self.request_kwargs)
+        self.log_response(response)
+        if response.status_code != 200:
+            LOG.error(query_error(response))
+            raise EsException("Failed to delete ES role.")
+        LOG.debug("OK")
+
+
     def user_name(self, name):
         if self.prefix:
             name = f"{self.prefix}-{name}"
@@ -287,6 +328,25 @@ class Es():
         if response.status_code != 200:
             LOG.error(query_error(response))
             raise EsException("Failed to put ES user.")
+        LOG.debug("OK")
+
+
+    def delete_user(
+            self,
+            name: str,
+    ):
+        LOG.debug(f"Deleting user definition: `{name}`.")
+        name = self.user_name(name)
+
+        url = f"{self.api_root}/_security/user/{name}"
+
+        LOG.debug(f"Deleting user definition: {name}.")
+        self.log_request("delete", url)
+        response = requests.delete(url, **self.request_kwargs)
+        self.log_response(response)
+        if response.status_code != 200:
+            LOG.error(query_error(response))
+            raise EsException("Failed to delete ES user.")
         LOG.debug("OK")
 
 
@@ -738,21 +798,32 @@ def put_roles(
 
 def put_users(
         es: Es,
-        user_admin: dict | None = None,
+        env: dict,
+        users: Iterable,
 ):
-    if user_admin:
+    for account in users:
         definition = {
-            "password" : user_admin["password"],
+            "password" : env[user_pass(account)],
         }
-        if user_admin["role"]:
-            role = user_admin["role"]
-            if es.prefix:
-                role = f"{es.prefix}-{role}"
-            definition["roles"] = [
-                role,
-            ]
+        role = env[user_role(account)]
+        prefix = env.get("ES_PREFIX", None)
+        if prefix:
+            role = f"{prefix}-{role}"
+        definition["roles"] = [
+            role,
+        ]
 
-        es.put_user(user_admin["username"], definition)
+        es.put_user(env[user_name(account)], definition)
+
+
+
+def delete_users(
+        es: Es,
+        env: dict,
+        users: Iterable,
+):
+    for account in users:
+        es.delete_user(env[user_name(account)])
 
 
 
@@ -780,6 +851,15 @@ def get_users(
                 v = ", ".join(v)
             print(f"  {k:16}: {v}")
         print()
+
+
+
+def delete_roles(
+        es: Es,
+        roles: dict,
+):
+    for name in roles:
+        es.delete_role(name)
 
 
 
@@ -829,18 +909,15 @@ def create_manage_parser(desc: str) -> argparse.ArgumentParser:
         help="Suppress warnings.")
 
     parser.add_argument(
-        "--api-root", "-A",
-        type=verify_uri,
-        help=f"Elasticsearch api-root. Default: `{DEFAULT_API_ROOT}`.")
-
-    parser.add_argument(
-        "--prefix", "-P",
-        help="Elasticsearch index name prefix")
-
-    parser.add_argument(
         "--index-name", "-i",
         action="append",
         help="Only work on the supplied indices.")
+
+    parser.add_argument(
+        "--env", "-E",
+        action="store", dest="env_path",
+        type=Path,
+        help="Path to directory of .env files.")
 
     parser.add_argument(
         "command",
@@ -862,44 +939,28 @@ def filter_indices(
 
 
 
-def manage_kwargs(
-        args: argparse.Namespace | None = None
-):
-    kwargs = {}
-
-    if args.api_root is not None:
-        kwargs["api_root"] = args.api_root
-    if args.prefix is not None:
-        kwargs["prefix"] = args.prefix
-
-    return kwargs
-
-
-
 def manage_main(
         args: argparse.Namespace,
+        env: dict,
         roles: dict,
         indices: dict,
-        api_root: str | None = None,
-        prefix: str | None = None,
-        ssl_cert: str | None = None,
-        user_admin: dict | None = None,
 ) -> None:
-    es = Es(
-        api_root=api_root,
-        prefix=prefix,
-        ssl_cert=ssl_cert,
-        auth="elastic",
-    )
+    es = get_search(env, account="elastic")
 
     if "delete-indices" in args.command:
         delete_indices(es, indices)
+
+    if "delete-users" in args.command:
+        delete_users(es, env, USERS)
+
+    if "delete-roles" in args.command:
+        delete_roles(es, roles)
 
     if "put-roles" in args.command:
         put_roles(es, roles)
 
     if "put-users" in args.command:
-        put_users(es, user_admin)
+        put_users(es, env, USERS)
 
     if "put-indices" in args.command:
         put_indices(es, indices)
