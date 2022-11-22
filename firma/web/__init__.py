@@ -1223,11 +1223,11 @@ class AuthPasswordOtpMixin():
 
 class AuthFirmaOAuth2Mixin():
     @classmethod
-    def conf_settings(cls, conf_path):
+    def conf_settings(cls, env):
         return {
             cls._OAUTH_SETTINGS_KEY: {
-                "key": conf_get(conf_path, cls._CONF_SETTINGS_KEY, "client-id"),
-                "secret": conf_get(conf_path, cls._CONF_SETTINGS_KEY, "client-secret"),
+                "key": env[f"{cls._ENV_SETTINGS_KEY}_CLIENT_ID"],
+                "secret": env[f"{cls._ENV_SETTINGS_KEY}_CLIENT_ID"],
             },
         }
 
@@ -1262,7 +1262,8 @@ class AuthFirmaOAuth2Mixin():
 
 
 class AuthGoogleOAuth2UserMixin(tornado.auth.GoogleOAuth2Mixin, AuthFirmaOAuth2Mixin):
-    _CONF_SETTINGS_KEY = "google-oauth"
+    _ENV_SETTINGS_KEY = "GOOGLE_OAUTH"
+    _OAUTH_SETTINGS_KEY = "google_oauth"
 
 
     async def _oauth_get_user_future(
@@ -1286,7 +1287,7 @@ class AuthGoogleOAuth2UserMixin(tornado.auth.GoogleOAuth2Mixin, AuthFirmaOAuth2M
 
 
 class AuthWordpressOAuth2UserMixin(tornado.auth.OAuth2Mixin, AuthFirmaOAuth2Mixin):
-    _CONF_SETTINGS_KEY = "wp-oauth"
+    _ENV_SETTINGS_KEY = "WP_OAUTH"
     _OAUTH_SETTINGS_KEY = "wp_oauth"
 
     async def _oauth_get_user_future(
