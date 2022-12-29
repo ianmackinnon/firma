@@ -122,7 +122,10 @@ def env_accounts(env):
 
 
 
-def load_env(env_path: Path):
+def load_env(env_path: Path | None):
+    if env_path is None:
+        env_path = Path.cwd()
+
     return load_env_multi([
         env_path / ".env",
         env_path / ".env.local",

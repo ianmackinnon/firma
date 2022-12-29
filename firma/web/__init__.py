@@ -1025,9 +1025,10 @@ class BaseHandler(tornado.web.RequestHandler):
         accept_language = Column(String, nullable=False)
         user_agent = Column(String, nullable=False)
         user = relationship(User, backref='session_list')
+        auth = relationship(User, backref='session_list')
 
         def __init__(
-            self, user,
+            self, user, auth,
             ip_address=None, accept_language=None, user_agent=None
         ):
         ...
@@ -1051,12 +1052,13 @@ class BaseHandler(tornado.web.RequestHandler):
         self.app_clear_cookie(
             "session", path=self.application.SESSION_COOKIE_PATH)
 
-    def create_session(self, user, Session):
+    def create_session(self, user, auth, Session):
         # pylint: disable=invalid-name
         # `Session` is a class.
 
         session = Session(
             user,
+            auth,
             self.request.remote_ip,
             self.get_accept_language(),
             self.get_user_agent(),
@@ -1227,7 +1229,7 @@ class AuthFirmaOAuth2Mixin():
         return {
             cls._OAUTH_SETTINGS_KEY: {
                 "key": env[f"{cls._ENV_SETTINGS_KEY}_CLIENT_ID"],
-                "secret": env[f"{cls._ENV_SETTINGS_KEY}_CLIENT_ID"],
+                "secret": env[f"{cls._ENV_SETTINGS_KEY}_CLIENT_SECRET"],
             },
         }
 
@@ -1315,12 +1317,17 @@ class AuthWordpressOAuth2UserMixin(tornado.auth.OAuth2Mixin, AuthFirmaOAuth2Mixi
             "grant_type": "authorization_code",
         })
 
-        response = await http.fetch(
-            self._OAUTH_ACCESS_TOKEN_URL,
-            method="POST",
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-            body=body,
-        )
+        try:
+            response = await http.fetch(
+                self._OAUTH_ACCESS_TOKEN_URL,
+                method="POST",
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                body=body,
+            )
+        except tornado.httpclient.HTTPClientError as e:
+            message = e.response.body
+            app_log.error(message)
+            raise
         access_token = escape.json_decode(response.body)
 
         user_data = await self._oauth_get_user_future(access_token)

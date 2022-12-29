@@ -23,6 +23,7 @@ import copy
 import time
 import logging
 import datetime
+import traceback
 import urllib.parse
 from typing import Iterable
 from pathlib import Path
@@ -135,6 +136,9 @@ def pytest_configure(config):
 
     if config.option.base_url is None:
         config.option.base_url = config.option.env.get("BASE_URL", None)
+
+    if config.option.credentials is None:
+        config.option.credentials = config.option.env.get("CREDENTIALS", None)
 
     ssl_cert_list = config.getoption("--ssl-cert")
     if ssl_cert_list:
@@ -538,9 +542,12 @@ def generate_selenium_session_fixture(**kwargs):
 
     @pytest.fixture(scope="session")
     def fix(request, selenium_url_hook, credentials):
+        fail = None
 
 
         def on_create_callback(driver):
+            nonlocal fail
+
             get_orig = driver._driver.get
 
             def get(url, *args, **kwargs):
@@ -549,7 +556,11 @@ def generate_selenium_session_fixture(**kwargs):
             driver.get = get
 
             if "on_create_hook" in kwargs:
-                kwargs["on_create_hook"](request, driver, credentials)
+                try:
+                    kwargs["on_create_hook"](request, driver, credentials)
+                except Exception as e:
+                    LOG.error("".join(traceback.format_exception(e)))
+                    fail = True
 
 
         def on_destroy_callback(driver):
@@ -568,10 +579,11 @@ def generate_selenium_session_fixture(**kwargs):
             **get_chrome_options(request)
         )
 
-        LOG.debug("Default timeout: %.3f" % driver._default_timeout)
-        LOG.debug("Retry: %s" % request.config.getoption("--server-retry"))
+        LOG.debug("Default timeout: %.3f", driver._default_timeout)
+        LOG.debug("Retry: %s", request.config.getoption("--server-retry"))
 
-        yield driver
+        if not fail:
+            yield driver
 
         driver.destroy()
 
@@ -611,47 +623,46 @@ def selenium(request, selenium_session):
 
 
 
-def selenium_clear_js_generator(ignore_errors: Iterable):
-    def selenium_clear_js_log(selenium):
-        yield
+def selenium_test_wrap_f(
+        selenium,
+        ignore_errors: Iterable,
+):
+    yield
+
+    def is_ignored(item):
+        for needle in ignore_errors:
+            if isinstance(needle, re.Pattern):
+                if bool(needle.search(item["message"])):
+                    return True
+            else:
+                if needle in item["message"]:
+                    return True
+
+        return False
 
 
-        def is_ignored(item):
-            for needle in ignore_errors:
-                if isinstance(needle, re.Pattern):
-                    if bool(needle.search(item["message"])):
-                        return True
-                else:
-                    if needle in item["message"]:
-                        return True
+    selenium.js_log_flush_to_buffer()
+    fail = None
+    if selenium.js_log_buffer_length():
+        for item in selenium.js_log_iterate_buffer():
+            if is_ignored(item):
+                continue
 
-            return False
+            log_f = {
+                "INFO": LOG.info,
+                "WARNING": LOG.warning,
+                "SEVERE": LOG.error,
+            }.get(item["level"], LOG.info)
 
+            if log_f:
+                log_f(item["message"])
 
-        selenium.js_log_flush_to_buffer()
-        fail = None
-        if selenium.js_log_buffer_length():
-            for item in selenium.js_log_iterate_buffer():
-                if is_ignored(item):
-                    continue
+            if item["level"] in ("SEVERE",):
+                fail = True
+    selenium.js_log_empty_buffer()
 
-                log_f = {
-                    "INFO": LOG.info,
-                    "WARNING": LOG.warning,
-                    "SEVERE": LOG.error,
-                }.get(item["level"], LOG.info)
-
-                if log_f:
-                    log_f(item["message"])
-
-                if item["level"] in ("SEVERE",):
-                    fail = True
-        selenium.js_log_empty_buffer()
-
-        if fail:
-            pytest.fail("Javascript errors")
-
-    return selenium_clear_js_log
+    if fail:
+        pytest.fail("Javascript errors")
 
 
 

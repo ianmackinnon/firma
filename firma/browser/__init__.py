@@ -17,15 +17,13 @@ import time
 import base64
 import shutil
 import logging
-import warnings
-from typing import Callable, Iterable, Union
+from typing import Iterable, Union
 
 import requests
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
-from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.wait import WebDriverWait
@@ -134,7 +132,6 @@ class SeleniumDriver():
 
         driver._show = show
         driver._devtools = devtools
-        driver._js_log_buffer = []
 
         return driver
 
@@ -161,6 +158,7 @@ class SeleniumDriver():
         self._on_create_callback = on_create_callback
         self._on_destroy_callback = on_destroy_callback
         self._chrome_options_extra = chrome_options_extra
+        self._js_log_buffer = []
 
         if self._default_timeout is None:
             self._default_timeout = DEFAULT_TIMEOUT
@@ -168,7 +166,6 @@ class SeleniumDriver():
         self._issue_iframe_warning = self.iframe_unstable()
 
         self.start(driver)
-
 
     def start(self, driver=None):
         if driver:
@@ -332,8 +329,8 @@ class SeleniumDriver():
                 LOG.warning(
                     "Node supplied to find function but "
                     "XPath selector starts with root node `//`. "
-                    f"`{selector}`"
-                    "Did you mean to search for `descendant::`?")
+                    "`%s`"
+                    "Did you mean to search for `descendant::`?", selector)
 
         by = {
             "css": By.CSS_SELECTOR,
@@ -463,6 +460,7 @@ return jQuery(arguments[0]).contents().filter(function() {
             elif isinstance(message, Iterable):
                 message_ = message
 
+        i = None
         for i, entry in enumerate(self.js_log_iterate_buffer()):
             if level is not None and entry["level"] != level:
                 continue
@@ -479,7 +477,7 @@ return jQuery(arguments[0]).contents().filter(function() {
         if not error:
             LOG.error("JS Log:")
             for entry in self.js_log_iterate_buffer():
-                LOG.error(f"  {repr(entry)}")
+                LOG.error("  %s", repr(entry))
 
         assert error, f"No Javascript errors with message matching {repr(message_)}."
 
@@ -497,7 +495,7 @@ return jQuery(arguments[0]).contents().filter(function() {
         if flush:
             self.js_log_flush_to_buffer()
         for item in self._js_log_buffer:
-            yield(item)
+            yield item
 
 
     def js_log_buffer_length(self):
@@ -505,7 +503,7 @@ return jQuery(arguments[0]).contents().filter(function() {
 
 
     def js_log_empty_buffer(self):
-        self._js_log_buffer = []
+        self._js_log_buffer.clear()
 
 
     def js_log_filter_buffer(self, f):
@@ -552,7 +550,7 @@ return jQuery(arguments[0]).contents().filter(function() {
 
 
         errors = []
-        for i, entry in enumerate(self.js_log_iterate_buffer()):
+        for entry in self.js_log_iterate_buffer():
             if is_ignored(entry):
                 continue
 
