@@ -224,13 +224,17 @@ def AtomicOutputFile(path: Union[Path, str], **kwargs):
 
     path = Path(path)
     kwargs = {
+        **{
+            "mode": "w",
+            "suffix": path.suffix or None,
+        },
         **kwargs,
         **{
             "delete": False,
         }
     }
 
-    with NamedTemporaryFile("w", **kwargs) as temp:
+    with NamedTemporaryFile(**kwargs) as temp:
         LOG.debug(
             "Opened temporary file `%s` for writing.",
             Path(temp.name).absolute())
