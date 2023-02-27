@@ -265,7 +265,7 @@ class Application(tornado.web.Application):
     def load_cookie_secret(path):
         try:
             return path.read_text().strip()
-        except ioerror:
+        except IOError:
             sys.stderr.write(
                 "could not open xsrf key. run 'make .xsrf' to generate one.\n")
             sys.exit(1)
