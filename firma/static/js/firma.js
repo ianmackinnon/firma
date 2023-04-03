@@ -1,6 +1,6 @@
 /*global window, $, _, URI */
 
-function AjaxBuffer (options) {
+window.AjaxBuffer = function (options) {
   //
   // Options:
   //
@@ -291,7 +291,7 @@ AjaxBuffer.prototype = {
   }
 };
 
-var firma = (function () {
+window.firma = (function () {
   "use strict";
 
   var app;
