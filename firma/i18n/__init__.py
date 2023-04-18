@@ -1,5 +1,6 @@
 import re
 import logging
+from collections import defaultdict
 
 
 
@@ -118,8 +119,9 @@ def format_restore_tokens(text, d):
 
 def translate_po(
         out, po_in, target, translate_item,
-        target_dict=None, protect=None
+        target_dict=None, protect=None, missing_only=None,
 ):
+    stats = defaultdict(int)
 
     def write_msg(msg):
         assert set(msg.keys()) >= {"msgid", "msgstr"}
@@ -145,6 +147,7 @@ def translate_po(
 
         if "comment" in msg:
             out.write("%s\n" % msg["comment"])
+            stats["comment"] += 1
             continue
 
         msg["msgstr"] = msg["msgstr"].replace(
@@ -154,18 +157,28 @@ def translate_po(
 
         if not msg["msgid"]:
             write_msg(msg)
+            stats["header"] += 1
             continue
 
-        if (
-                protect and target_dict and
-                msg.get("msgctxt", None) and
-                protect.search(msg["msgctxt"])
-        ):
+        if target_dict is not None:
             key = msgkey(msg)
             if msg2 := target_dict.get(key, None):
-                write_msg(msg2)
-                continue
+                if missing_only:
+                    stats["existing"] += 1
+                    write_msg(msg2)
+                    continue
 
-        msg["msgstr"] = translate_item(msg["msgstr"])
+                if (
+                        protect and
+                        msg.get("msgctxt", None) and
+                        protect.search(msg["msgctxt"])
+                ):
+                    stats["protected"] += 1
+                    write_msg(msg2)
+                    continue
 
+        msg["msgstr"] = translate_item(msg["msgstr"], stats=stats)
+        stats["translated"] += 1
         write_msg(msg)
+
+    return stats

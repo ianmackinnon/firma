@@ -1,6 +1,12 @@
-/*global window, $, _, URI */
+/* global window */
 
-window.AjaxBuffer = function (options) {
+import $ from 'jquery';
+import _ from 'lodash';
+import URI from 'urijs';
+
+'use strict';
+
+function AjaxBuffer (options) {
   //
   // Options:
   //
@@ -291,7 +297,7 @@ AjaxBuffer.prototype = {
   }
 };
 
-window.firma = (function () {
+var firma = (function () {
   "use strict";
 
   var app;
@@ -911,3 +917,8 @@ window.firma = (function () {
   return app;
 
 })();
+
+export {
+  AjaxBuffer,
+  firma,
+};
