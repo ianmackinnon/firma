@@ -452,6 +452,8 @@ return jQuery(arguments[0]).contents().filter(function() {
             source: Union[str, None] = None,
             message: Union[Iterable[str], str, None] = None,
     ):
+        self.js_log_flush_to_buffer()
+
         error = None
         message_ = []
         if message:
@@ -491,14 +493,14 @@ return jQuery(arguments[0]).contents().filter(function() {
         self._js_log_buffer += list(self.get_log("browser"))
 
 
-    def js_log_iterate_buffer(self, flush=True):
-        if flush:
-            self.js_log_flush_to_buffer()
+    def js_log_iterate_buffer(self):
+        self.js_log_flush_to_buffer()
         for item in self._js_log_buffer:
             yield item
 
 
     def js_log_buffer_length(self):
+        self.js_log_flush_to_buffer()
         return len(self._js_log_buffer)
 
 
