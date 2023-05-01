@@ -46,11 +46,7 @@ def iterate_po(path):
             text = match.group(1)
             assert field
             assert field in msg
-            n_brackets = len(re.findall(r"[\(\{\[\]\}\)]", msg[field]))
-            if n_brackets % 2:
-                msg[field] += text
-            else:
-                msg[field] += "\n" + text
+            msg[field] += text
             continue
 
         if match := re.match(r"(#.*)?$", line):
