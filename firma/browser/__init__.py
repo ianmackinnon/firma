@@ -451,8 +451,11 @@ return jQuery(arguments[0]).contents().filter(function() {
             level: Union[str, None] = None,
             source: Union[str, None] = None,
             message: Union[Iterable[str], str, None] = None,
+            wait: Union[int, None] = 1,
     ):
-        self.js_log_flush_to_buffer()
+        """
+        `message`: if a list, error messages must contain all strings in list.
+        """
 
         error = None
         message_ = []
@@ -462,19 +465,28 @@ return jQuery(arguments[0]).contents().filter(function() {
             elif isinstance(message, Iterable):
                 message_ = message
 
-        i = None
-        for i, entry in enumerate(self.js_log_iterate_buffer()):
-            if level is not None and entry["level"] != level:
-                continue
-            if source is not None and entry["source"] != source:
-                continue
+        interval = 0.5
+        while wait >= 0:
+            self.js_log_flush_to_buffer()
+            i = None
+            for i, entry in enumerate(self.js_log_iterate_buffer()):
+                if level is not None and entry["level"] != level:
+                    continue
+                if source is not None and entry["source"] != source:
+                    continue
 
-            for item in message_:
-                if item not in entry["message"]:
+                for item in message_:
+                    if item not in entry["message"]:
+                        break
+                else:
+                    error = entry
                     break
-            else:
-                error = entry
+
+            if error:
                 break
+
+            time.sleep(interval)
+            wait -= interval
 
         if not error:
             LOG.error("JS Log:")
