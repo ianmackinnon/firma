@@ -115,7 +115,7 @@ def pytest_addoption(parser):
     parser.addoption("--driver-timeout", action="store", type=float, default=5)
     parser.addoption("--mode", action="store")
     parser.addoption("--profile", action="store_true")
-    parser.addoption("--server-retry", action="store_true")
+    parser.addoption("--server-retry", action="store_true", default=None)
     parser.addoption("--hide-header", action="store_true")
     parser.addoption("--devtools", action="store_true")
     parser.addoption("--show-browser", action="store_true")
@@ -139,6 +139,11 @@ def pytest_configure(config):
 
     if config.option.credentials is None:
         config.option.credentials = config.option.env.get("CREDENTIALS", None)
+
+    if config.option.server_retry is None:
+        config.option.server_retry = config.option.env.get("TEST_SERVER_RETRY", None)
+        if config.option.server_retry is not None:
+            config.option.server_retry = bool(int(config.option.server_retry))
 
     ssl_cert_list = config.getoption("--ssl-cert")
     if ssl_cert_list:
@@ -317,7 +322,6 @@ def _http_request(
         pytest_request=None, redirect=True,
         **kwargs
 ):
-
     session = requests.Session()
 
     if retry:
