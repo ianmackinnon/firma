@@ -45,7 +45,7 @@ from tornado import escape
 from tornado.log import app_log
 from tornado.web import _has_stream_request_body
 
-from sqlalchemy import MetaData, Table
+from sqlalchemy import MetaData, Table, text as sa_text
 from sqlalchemy.orm import aliased
 from sqlalchemy.exc import DatabaseError
 from sqlalchemy.orm.exc import NoResultFound
@@ -384,7 +384,7 @@ class Application(tornado.web.Application):
         db[db_key]["status"] = None
 
         try:
-            self.orm.execute(query_string % db_name).scalar()
+            self.orm.execute(sa_text(query_string % db_name)).scalar()
             self.mysql_db_success(db_key)
         except DatabaseError as e:
             self.mysql_db_failure(db_key, e)
