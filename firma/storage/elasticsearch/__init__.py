@@ -1,6 +1,7 @@
 import re
 import sys
 import json
+import time
 import logging
 import argparse
 import warnings
@@ -150,6 +151,51 @@ def get_search(
 
 
 
+def es_query_init_wait(
+        query_f,
+        timeout=10,
+        interval=1,
+):
+    """
+    Make an initial search query to ensure the cluster is available,
+    the index exists, and has data.
+
+    Waits for shard to appear after ES service claims to be up.
+    """
+
+    assert interval > 0
+    assert timeout > 0
+    elapsed = 0
+    while True:
+        try:
+            result = query_f()
+        except EsException as e:
+            try:
+                error_type = e.data["error"]["failed_shards"][0]["reason"]["type"]
+            except (TypeError, ValueError, IndexError):
+                error_type = None
+
+            if error_type != "no_shard_available_action_exception":
+                raise
+
+            LOG.warning(
+                f"Elasticsearch `no_shard_available_action_exception`. ",
+                interval
+            )
+
+            elapsed += interval
+            if elapsed <= timeout:
+                LOG.warning(f"Waiting %s.", interval)
+                time.sleep(interval)
+                continue
+            else:
+                raise
+        else:
+            break
+
+    return result
+
+
 class Es():
     """
     Controller for Elasticsearch indices.
@@ -277,7 +323,7 @@ class Es():
         self.log_response(response)
         if response.status_code != 200:
             LOG.error(query_error(response))
-            raise EsException("Failed to put ES role.")
+            raise EsException("Failed to put ES role.", response=response)
         LOG.debug("OK")
 
 
@@ -296,7 +342,7 @@ class Es():
         self.log_response(response)
         if response.status_code != 200:
             LOG.error(query_error(response))
-            raise EsException("Failed to delete ES role.")
+            raise EsException("Failed to delete ES role.", response=response)
         LOG.debug("OK")
 
 
@@ -328,7 +374,7 @@ class Es():
         self.log_response(response)
         if response.status_code != 200:
             LOG.error(query_error(response))
-            raise EsException("Failed to put ES user.")
+            raise EsException("Failed to put ES user.", response=response)
         LOG.debug("OK")
 
 
@@ -347,7 +393,7 @@ class Es():
         self.log_response(response)
         if response.status_code != 200:
             LOG.error(query_error(response))
-            raise EsException("Failed to delete ES user.")
+            raise EsException("Failed to delete ES user.", response=response)
         LOG.debug("OK")
 
 
@@ -419,7 +465,7 @@ class Es():
         self.log_response(response)
         if response.status_code != 200:
             LOG.error(query_error(response))
-            raise EsException("Failed to refresh ES node.")
+            raise EsException("Failed to refresh ES node.", response=response)
         LOG.debug("OK")
 
 
@@ -454,7 +500,7 @@ class Es():
         self.log_response(response)
         if response.status_code != 200:
             LOG.error(query_error(response))
-            raise EsException("Failed to search.")
+            raise EsException("Failed to search.", response=response)
 
         result = response.json()
 
@@ -477,7 +523,7 @@ class Es():
         self.log_response(response)
         if response.status_code != 200:
             LOG.error(query_error(response))
-            raise EsException("Failed to search.")
+            raise EsException("Failed to search.", response=response)
 
         result = response.json()
 
@@ -562,7 +608,7 @@ class Es():
         self.log_response(response)
         if not str(response.status_code).startswith("2"):
             LOG.error(query_error(response))
-            raise EsException(f"Failed to index document `{response.status_code}`.")
+            raise EsException(f"Failed to index document `{response.status_code}`.", response=response)
 
 
     def delete(
@@ -580,7 +626,7 @@ class Es():
         self.log_response(response)
         if not str(response.status_code).startswith("2"):
             LOG.error(query_error(response))
-            raise EsException(f"Failed to delete document `{response.status_code}`.")
+            raise EsException(f"Failed to delete document `{response.status_code}`.", response=response)
 
 
     def delete_all(
@@ -603,7 +649,7 @@ class Es():
         self.log_response(response)
         if not str(response.status_code).startswith("2"):
             LOG.error(query_error(response))
-            raise EsException(f"Failed to delete document `{response.status_code}`.")
+            raise EsException(f"Failed to delete document `{response.status_code}`.", response=response)
 
 
     def mapping(
@@ -700,7 +746,7 @@ class Es():
         self.log_response(response)
         if response.status_code != 200:
             LOG.error(query_error(response))
-            raise EsException("Bulk action failed.")
+            raise EsException("Bulk action failed.", response=response)
         result = response.json()
         if result["errors"]:
             for item in result["items"]:
@@ -708,7 +754,7 @@ class Es():
                 status = item[key]["status"]
                 if status >= 400:
                     LOG.error(item)
-            raise EsException("Some bulk actions failed.")
+            raise EsException("Some bulk actions failed.", response=response)
 
         return result
 
@@ -836,7 +882,7 @@ def get_users(
     response = requests.get(url, **es.request_kwargs)
     if response.status_code != 200:
         LOG.error(query_error(response))
-        raise EsException("Failed to get ES users.")
+        raise EsException("Failed to get ES users.", response=response)
 
     data = response.json()
 
@@ -872,7 +918,7 @@ def get_roles(
     response = requests.get(url, **es.request_kwargs)
     if response.status_code != 200:
         LOG.error(query_error(response))
-        raise EsException("Failed to get ES roless.")
+        raise EsException("Failed to get ES roless.", response=response)
 
     data = response.json()
 
