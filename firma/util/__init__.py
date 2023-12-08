@@ -16,6 +16,7 @@ import re
 import sys
 import shutil
 import logging
+import datetime
 import traceback
 from typing import Union
 from pathlib import Path
@@ -127,6 +128,12 @@ def format_sql_query(query) -> str:
     for match in re.compile(r"%\(([^)]*)\)s").finditer(text):
         subs.append((match.span(), params[match.group(1)]))
     for span, value in reversed(subs):
+        if isinstance(value, datetime.date):
+            value = str(value)
+
+        if isinstance(value, str):
+            value = repr(value)
+
         text = text[:span[0]] + str(value) + text[span[1]:]
     text = format_sql(text)
     return text
