@@ -22,7 +22,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from contextlib import contextmanager
 
-import sqlparse
+import sqlglot
 from dotenv import dotenv_values
 from unidecode import unidecode
 
@@ -115,7 +115,7 @@ def format_abbreviate(i):
 
 def format_sql(text) -> str:
     text = str(text)
-    return sqlparse.format(text, reindent=True)
+    return "\n" + sqlglot.transpile(text, read='mysql', pretty=True)[0] + "\n;\n"
 
 
 
