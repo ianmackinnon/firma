@@ -25,6 +25,9 @@ class CacheRedis(object):
     def __init__(self, namespace, get_current_version_state, **kwargs):
         self._logger = kwargs.pop("logger", None)
         self._namespace = namespace
+        if "port" in kwargs and kwargs["port"] is None:
+            del kwargs["port"]
+
         self._cache = redis.StrictRedis(**kwargs)
         self._online = False            # `False` if last connection failed
         self._old_ttl = self.OLD_TTL
