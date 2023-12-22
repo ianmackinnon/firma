@@ -92,6 +92,11 @@ def user_privs(account):
 
 
 
+def user_host(account):
+    return f"DB_USER_{account}_HOST"
+
+
+
 def env_accounts(env):
     name_set = dict()
     pass_set = dict()
@@ -197,9 +202,15 @@ def engine_set_optimizer_switch(engine, key, value):
 
 
 
-def drop_user(cursor, username):
+def drop_user(
+        cursor,
+        username: str,
+        host: str | None = None,
+):
+    if host is None:
+        host = "localhost"
     try:
-        cursor.execute(f"drop user '{username}'@'localhost';")
+        cursor.execute(f"drop user '{username}'@'{host}';")
         LOG.debug(f"User `{username}` dropped.")
     except pymysql.err.OperationalError as e:
         if e.args[0] == MYSQL_ERROR["USER_NO_EXIST_DROP"]:
@@ -208,9 +219,17 @@ def drop_user(cursor, username):
             raise e
 
 
-def create_user(cursor, username: str, password: str, privs: list):
+def create_user(
+        cursor,
+        username: str,
+        password: str,
+        privs: list,
+        host: str | None = None,
+):
+    if host is None:
+        host = "localhost"
     drop_user(cursor, username)
-    user_full = f"'{username}'@'localhost'"
+    user_full = f"'{username}'@'{host}'"
     cmd = f"create user {user_full} identified by '{password}';"
     LOG.debug(cmd)
     cursor.execute(cmd)
@@ -225,7 +244,9 @@ def create_user(cursor, username: str, password: str, privs: list):
 
 def mysql_drop_users(cursor, env, accounts):
     for account in accounts:
-        drop_user(cursor, env[user_name(account)])
+        host = env.get(user_host(account), None)
+
+        drop_user(cursor, env[user_name(account)], host=host)
 
 
 
@@ -241,7 +262,11 @@ def mysql_drop_database(cursor, name):
 
 
 
-def mysql_create_users(cursor, env, accounts):
+def mysql_create_users(
+        cursor,
+        env,
+        accounts,
+):
     for account in accounts:
         privs = []
 
@@ -249,7 +274,9 @@ def mysql_create_users(cursor, env, accounts):
         if priv_str:
             privs += split(priv_str.format(**env))
 
-        create_user(cursor, env[user_name(account)], env[user_pass(account)], privs)
+        host = env.get(user_host(account), None)
+
+        create_user(cursor, env[user_name(account)], env[user_pass(account)], privs, host=host)
 
 
 
