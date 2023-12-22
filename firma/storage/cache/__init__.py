@@ -22,13 +22,13 @@ class CacheRedis(object):
     OLD_TTL = 30 * 60           # Half an hour
 
 
-    def __init__(self, namespace, get_current_version_state, logger=None):
+    def __init__(self, namespace, get_current_version_state, **kwargs):
+        self._logger = kwargs.pop("logger", None)
         self._namespace = namespace
-        self._cache = redis.StrictRedis()
+        self._cache = redis.StrictRedis(**kwargs)
         self._online = False            # `False` if last connection failed
         self._old_ttl = self.OLD_TTL
         self._get_current_version_state = get_current_version_state
-        self._logger = logger
 
         (version, state) = self._get_current_version_state()
         try:

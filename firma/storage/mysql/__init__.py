@@ -155,6 +155,10 @@ def mysql_connection_url(
         host=None,
         port=None
 ):
+    if host is None:
+        host = env.get("DB_HOST", None)
+    if port is None:
+        port = env.get("DB_PORT", None)
     return connection_url(
         env[user_name(account)],
         env[user_pass(account)],
