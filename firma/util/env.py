@@ -1,11 +1,23 @@
+import os
 from pathlib import Path
 
 from dotenv import dotenv_values
 
 
+class EnvDict(dict):
+    def __getitem__(self, k):
+        if value := os.environ.get(k, ""):
+            return value
+        return super().__getitem__(k)
+    def get(self, k, default=None):
+        if value := os.environ.get(k, ""):
+            return value
+        return super().get(k, default=default)
+
+
 
 def load_env_multi(path_list):
-    return {k: v for path in path_list for k, v in dotenv_values(path).items()}
+    return EnvDict({k: v for path in path_list for k, v in dotenv_values(path).items()})
 
 
 
