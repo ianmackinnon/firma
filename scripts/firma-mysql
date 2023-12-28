@@ -13,6 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+import os
 import sys
 import logging
 import argparse
@@ -21,13 +22,11 @@ from pathlib import Path
 
 import pymysql
 
-from firma.util import (
-    init_logs,
-)
+from firma.util import init_logs
+from firma.util.env import load_env_app
 from firma.storage.mysql import (
     MYSQL_ERROR,
     env_accounts,
-    load_env,
     mysql_test,
     mysql_create,
     mysql_source,
@@ -56,47 +55,47 @@ def main_functions(
         test=False, source=None):
     # pylint: disable=too-many-return-statements
 
-    env = load_env(env_path)
+    load_env_app(env_path)
 
-    accounts = env_accounts(env)
+    accounts = env_accounts()
 
-    verify_mysql_name(env, "DB_NAME")
+    verify_mysql_name("DB_NAME")
     for v in accounts:
-        verify_mysql_user(env, v)
+        verify_mysql_user(v)
 
     if generate or generate_dump:
-        return mysql_generate_conf(env, account=account, dump=generate_dump)
+        return mysql_generate_conf(account=account, dump=generate_dump)
 
     if test:
-        if mysql_test(env, accounts):
+        if mysql_test(accounts):
             pass
         else:
             LOG.error("Database and users not correctly set up.")
             sys.exit(1)
 
     if source or empty or drop_triggers:
-        cursor = get_account_cursor(env, account)
+        cursor = get_account_cursor(account)
     elif (purge or update_users):
         cursor = get_root_cursor()
     else:
         # Use the MySQL root account
-        return mysql_create(env, accounts)
+        return mysql_create(accounts)
 
     if purge:
         # Further purge commands later in this function
-        mysql_drop_users(cursor, env, accounts)
+        mysql_drop_users(cursor, accounts)
 
     # Connect to DB
     try:
-        cursor.execute(f"use {env['DB_NAME']}")
+        cursor.execute(f"use {os.environ['DB_NAME']}")
     except pymysql.err.OperationalError as e:
         if e.args[0] == MYSQL_ERROR["DB_NO_EXIST"]:
             if purge:
                 LOG.warning(
                     "Database '%s' does not exist. Nothing to do.",
-                    env['DB_NAME'])
+                    os.environ['DB_NAME'])
                 return
-            LOG.error("Database '%s' does not exist.", env['DB_NAME'])
+            LOG.error("Database '%s' does not exist.", os.environ['DB_NAME'])
             sys.exit(1)
         else:
             raise e
@@ -106,17 +105,17 @@ def main_functions(
         return mysql_source(cursor, source)
 
     if empty:
-        return mysql_empty(cursor, env)
+        return mysql_empty(cursor)
 
     if drop_triggers:
-        return mysql_drop_triggers(cursor, env)
+        return mysql_drop_triggers(cursor)
 
     if purge:
-        mysql_drop_database(cursor, env["DB_NAME"])
+        mysql_drop_database(cursor, os.environ["DB_NAME"])
         return
 
     if update_users:
-        return mysql_create_users(cursor, env, accounts)
+        return mysql_create_users(cursor, accounts)
 
     raise Exception("No action specified")
 

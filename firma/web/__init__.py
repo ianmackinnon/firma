@@ -520,7 +520,8 @@ class Application(tornado.web.Application):
 
     def init_env(self):
         # Dotenv files will only be sought in the current working directory.
-        self.settings.env = load_env_app(Path("."), mode=self.settings.options.mode)
+        load_env_app(Path("."), mode=self.settings.options.mode)
+
         if self.settings.options.mode:
             self.add_stat("Mode", self.settings.options.mode)
 
@@ -537,21 +538,21 @@ class Application(tornado.web.Application):
 
         self.settings.debug = bool(defined(
             self.settings.options.debug,
-            self.settings.env.get('DEBUG', None),
+            os.environ.get('DEBUG', None),
         ))
         if self.settings.debug:
             self.add_stat("Debug", True)
 
         self.settings.port = defined(
             self.settings.options.port,
-            self.settings.env.get('PORT', None),
+            os.environ.get('PORT', None),
             DEFAULTS["port"],
         )
         self.add_stat("Address", f"http://localhost:{self.settings.port}")
 
         self.settings.cors = defined(
             self.settings.options.cors,
-            self.settings.env.get('CORS', None),
+            os.environ.get('CORS', None),
         )
         if self.settings.cors:
             self.add_stat("CORS", self.settings.cors)

@@ -1,27 +1,14 @@
 import os
 from pathlib import Path
 
-from dotenv import dotenv_values
-
-
-class EnvDict(dict):
-    def __getitem__(self, k):
-        if value := os.environ.get(k, ""):
-            return value
-        return super().__getitem__(k)
-    def get(self, k, default=None):
-        if value := os.environ.get(k, ""):
-            return value
-        return super().get(k, default=default)
+from dotenv import load_dotenv, dotenv_values
 
 
 
-def load_env_multi(path_list):
-    return EnvDict({k: v for path in path_list for k, v in dotenv_values(path).items()})
-
-
-
-def load_env_app(env_path: Path | str, mode: str | None = None):
+def env_app_path_list(
+        env_path: Path | str,
+        mode: str | None = None
+) -> list[Path]:
     path_list = [
         env_path / ".env",
         env_path / ".env.local",
@@ -31,4 +18,23 @@ def load_env_app(env_path: Path | str, mode: str | None = None):
             env_path / f".env.{mode}",
             env_path / f".env.{mode}.local",
         ]
-    return load_env_multi(path_list)
+    return path_list
+
+
+
+def load_env_app(
+        env_path: Path | str,
+        mode: str | None = None
+) -> None:
+    for path in env_app_path_list(env_path, mode=mode):
+        load_dotenv(path)
+
+
+
+def env_values_multi(path_list):
+    return {k: v for path in path_list for k, v in dotenv_values(path).items()}
+
+
+
+def env_app_values(env_path: Path | str, mode: str | None = None) -> dict:
+    return env_values_multi(env_app_path_list(env_path, mode=mode))

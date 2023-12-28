@@ -17,8 +17,6 @@ import humanize
 import requests
 from requests.auth import HTTPBasicAuth
 
-from firma.util.env import load_env_multi
-
 
 
 DEFAULT_API_ROOT = "http://localhost:9200"
@@ -111,14 +109,6 @@ def env_accounts(env):
         sys.exit(1)
 
     return list(name_set)
-
-
-
-def load_env(env_path: Path):
-    return load_env_multi([
-        env_path / ".env",
-        env_path / ".env.local",
-    ])
 
 
 

@@ -17,7 +17,7 @@ import sys
 import argparse
 from pathlib import Path
 
-from firma.util.env import load_env_app
+from firma.util.env import env_app_values
 
 
 
@@ -56,7 +56,7 @@ def main():
         parser.print_usage()
         sys.exit(1)
 
-    env = load_env_app(args.env_path, mode=args.mode)
+    env = env_app_values(args.env_path, mode=args.mode)
 
     if args.makefile_include:
         for k, v in env.items():

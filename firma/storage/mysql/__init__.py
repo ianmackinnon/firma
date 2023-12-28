@@ -11,6 +11,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+import os
 import re
 import sys
 import getpass
@@ -21,8 +22,6 @@ from hashlib import sha1
 
 import pymysql
 from sqlalchemy import event
-
-from firma.util.env import load_env_multi
 
 
 
@@ -41,27 +40,24 @@ MYSQL_ERROR = {
 
 
 
-def verify_mysql_name(env: dict, key: str):
-    try:
-        string = env[key]
-    except KeyError:
-        return
-
-    if not re.match("[0-9A-Za-z_]*$", string):
-        LOG.error("Error: '%s' is invalid.", string)
-        LOG.error("%s should only contain digits, ASCII letters and underscores.", key)
-        LOG.error("Anything else can cause problems for some versions of MySQL.")
-        sys.exit(1)
-    if len(string) > 16:
-        LOG.error("Error: %s may be a maximum of 16 characters.", key)
+def verify_mysql_name(key):
+    fail = None
+    value = os.environ[key]
+    if not re.match("[0-9A-Za-z_]*$", value):
+        fail = True
+        LOG.error("`%s` may only contain digits, ASCII letters and underscores.", key)
+    if len(value) > 16:
+        fail = True
+        LOG.error("`%s` may be a maximum of 16 characters.", key)
+    if fail:
         LOG.error("Anything else can cause problems for some versions of MySQL.")
         sys.exit(1)
 
 
 
-def verify_mysql_user(env: dict, account: str):
-    verify_mysql_name(env, user_name(account))
-    verify_mysql_name(env, user_pass(account))
+def verify_mysql_user(account: str):
+    verify_mysql_name(user_name(account))
+    verify_mysql_name(user_pass(account))
 
 
 
@@ -97,44 +93,32 @@ def user_host(account):
 
 
 
-def env_accounts(env):
-    name_set = dict()
-    pass_set = dict()
-    priv_set = dict()
-
-    for k in env:
-        if match := re.match(r"DB_USER_([A-Z]{2,8})_(NAME|PASS|PRIVS)$", k):
+def env_accounts():
+    is_set = {
+        "NAME": set(),
+        "PASS": set(),
+        "PRIVS": set(),
+        "HOST": set(),
+    }
+    for k in os.environ:
+        if match := re.match(r"DB_USER_([A-Z]{2,8})_(NAME|PASS|PRIVS|HOST)$", k):
             account, item = match.groups()
-            if item == "NAME":
-                name_set[account] = True
-            elif item == "PASS":
-                pass_set[account] = True
-            else:
-                priv_set[account] = True
+            is_set[item].add(account)
 
-    if not (name_set == pass_set == priv_set):
+    if (
+            not (is_set["NAME"] == is_set["PASS"] == is_set["PRIVS"])
+            or (is_set["HOST"] - is_set["NAME"])
+    ):
         LOG.error(".env DB user variables do not fully match:")
-        LOG.error("DB_USER_..._NAME:  %s", ", ".join(name_set))
-        LOG.error("DB_USER_..._PASS:  %s", ", ".join(pass_set))
-        LOG.error("DB_USER_..._PRIVS: %s", ", ".join(priv_set))
+        for k in is_set:
+            LOG.error("DB_USER_..._%s:  %s", k, ", ".join(is_set[k]))
         sys.exit(1)
 
-    if not name_set:
+    if not is_set["NAME"]:
         LOG.error("No .env DB user variables are defined.")
         sys.exit(1)
 
-    return list(name_set)
-
-
-
-def load_env(env_path: Path | None):
-    if env_path is None:
-        env_path = Path.cwd()
-
-    return load_env_multi([
-        env_path / ".env",
-        env_path / ".env.local",
-    ])
+    return list(is_set["NAME"])
 
 
 
@@ -161,21 +145,18 @@ def connection_url(
 
 
 def mysql_connection_url(
-        env: dict,
         account: str,
-        host=None,
-        port=None
 ):
-    if host is None:
-        host = env.get("DB_HOST", None)
-    if port is None:
-        port = env.get("DB_PORT", None)
+    """
+    Create connection URL from environment variables and account name.
+    """
+
     return connection_url(
-        env[user_name(account)],
-        env[user_pass(account)],
-        env["DB_NAME"],
-        host=host,
-        port=port
+        os.environ[user_name(account)],
+        os.environ[user_pass(account)],
+        os.environ["DB_NAME"],
+        host=os.environ.get("DB_HOST", None),
+        port=os.environ.get("DB_PORT", None),
     )
 
 
@@ -248,11 +229,11 @@ def create_user(
 
 
 
-def mysql_drop_users(cursor, env, accounts):
+def mysql_drop_users(cursor, accounts):
     for account in accounts:
-        host = env.get(user_host(account), None)
+        host = os.environ.get(user_host(account), None)
 
-        drop_user(cursor, env[user_name(account)], host=host)
+        drop_user(cursor, os.environ[user_name(account)], host=host)
 
 
 
@@ -270,19 +251,19 @@ def mysql_drop_database(cursor, name):
 
 def mysql_create_users(
         cursor,
-        env,
         accounts,
 ):
     for account in accounts:
         privs = []
 
-        priv_str = env.get(user_privs(account), None)
+        priv_str = os.environ.get(user_privs(account), None)
         if priv_str:
-            privs += split(priv_str.format(**env))
+            priv_values = {k: v for k, v in os.environ.items() if k.endswith("DB_NAME")}
+            privs += split(priv_str.format(**priv_values))
 
-        host = env.get(user_host(account), None)
+        host = os.environ.get(user_host(account), None)
 
-        create_user(cursor, env[user_name(account)], env[user_pass(account)], privs, host=host)
+        create_user(cursor, os.environ[user_name(account)], os.environ[user_pass(account)], privs, host=host)
 
 
 
@@ -291,22 +272,15 @@ def mysql_create_users(
 
 
 def database_hash(
-        env: dict,
         account: str,
-        host: str | None = None,
-        port: int | None = None,
 ):
-
-    if host is None:
-        host = "localhost"
-
     db_options = {
-        "host": host,
-        "user": env[user_name(account)],
-        "passwd": env[user_pass(account)],
-        "database": env["DB_NAME"],
+        "user": os.environ[user_name(account)],
+        "passwd": os.environ[user_pass(account)],
+        "database": os.environ["DB_NAME"],
+        "host": os.environ.get("DB_HOST", "localhost"),
     }
-    if port is not None:
+    if port := os.environ.get("DB_PORT", None):
         db_options["port"] = port
 
     sys.stdout.flush()
@@ -339,7 +313,6 @@ def database_hash(
 
 
 def mysql_generate_conf(
-        env: dict,
         account: str,
         dump: bool = False
 ):
@@ -349,8 +322,8 @@ def mysql_generate_conf(
 user=%s
 password=%s
 """ % (
-    env[user_name(account)],
-    env[user_pass(account)],
+    os.environ[user_name(account)],
+    os.environ[user_pass(account)],
 ))
     else:
         sys.stdout.write( \
@@ -359,9 +332,9 @@ database=%s
 user=%s
 password=%s
 """ % (
-    env["DB_NAME"],
-    env[user_name(account)],
-    env[user_pass(account)],
+    os.environ["DB_NAME"],
+    os.environ[user_name(account)],
+    os.environ[user_pass(account)],
 ))
 
 
@@ -416,49 +389,47 @@ def get_root_cursor():
 
 
 
-def get_account_cursor(env, account):
+def get_account_cursor(account):
     return get_cursor({
         "host": "localhost",
-        "user": env[user_name(account)],
-        "passwd": env[user_pass(account)],
+        "user": os.environ[user_name(account)],
+        "passwd": os.environ[user_pass(account)],
         # "unix_socket": "/var/run/mysqld/mysqld.sock",
     })
 
 
 
 def mysql_create(
-        env: dict,
         accounts: list
 ):
-    if mysql_test(env, accounts):
+    if mysql_test(accounts):
         LOG.info("Database and users already correctly set up. Nothing to do.")
         return
 
     cursor = get_root_cursor()
 
     try:
-        cursor.execute(f"use {env['DB_NAME']};")
+        cursor.execute(f"use {os.environ['DB_NAME']};")
     except pymysql.err.OperationalError as e:
         if e.args[0] == MYSQL_ERROR["DB_NO_EXIST"]:
-            LOG.debug(f"Database {env['DB_NAME']} does not exist.")
+            LOG.debug(f"Database {os.environ['DB_NAME']} does not exist.")
 
-            cursor.execute(f"""create database {env['DB_NAME']}
+            cursor.execute(f"""create database {os.environ['DB_NAME']}
 DEFAULT CHARACTER SET = utf8
 DEFAULT COLLATE = utf8_bin;""")
 
-            cursor.execute(f"use {env['DB_NAME']};")
+            cursor.execute(f"use {os.environ['DB_NAME']};")
         else:
             raise e
 
 
-    LOG.debug(f"Database {env['DB_NAME']} exists.")
+    LOG.debug(f"Database {os.environ['DB_NAME']} exists.")
 
-    mysql_create_users(cursor, env, accounts)
+    mysql_create_users(cursor, accounts)
 
 
 
 def mysql_test(
-        env: dict,
         accounts: list
 ):
     """Returns True if successful, False if unsuccessful."""
@@ -467,17 +438,17 @@ def mysql_test(
 
     assert accounts
 
-    database = env['DB_NAME']
+    database = os.environ['DB_NAME']
 
     for account in accounts:
-        username = env[user_name(account)]
+        username = os.environ[user_name(account)]
         message = f"database `{database}` as `{account}` user `{username}`."
         try:
             pymysql.connect(
                 host="localhost",
-                user=env[user_name(account)],
-                passwd=env[user_pass(account)],
-                db=env["DB_NAME"],
+                user=os.environ[user_name(account)],
+                passwd=os.environ[user_pass(account)],
+                db=os.environ["DB_NAME"],
             )
         except pymysql.err.OperationalError:
             status = False
@@ -537,13 +508,13 @@ where trigger_schema = '%s';""", database)
 
 
 
-def mysql_empty(cursor, env):
-    drop_database_tables(cursor, env["DB_NAME"])
+def mysql_empty(cursor):
+    drop_database_tables(cursor, os.environ["DB_NAME"])
 
 
 
-def mysql_drop_triggers(cursor, env):
-    drop_database_triggers(cursor, env["DB_NAME"])
+def mysql_drop_triggers(cursor):
+    drop_database_triggers(cursor, os.environ["DB_NAME"])
 
 
 

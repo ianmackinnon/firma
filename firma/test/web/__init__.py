@@ -17,6 +17,7 @@ Pytest plugin to be imported by `conftest.py`.
 
 # pylint: disable=redefined-outer-name
 
+import os
 import re
 import json
 import copy
@@ -132,16 +133,16 @@ def pytest_addoption(parser):
 def pytest_configure(config):
     if config.option.mode:
         # Dotenv files will only be sought in the current working directory.
-        config.option.env = load_env_app(Path("."), mode=config.option.mode)
+        load_env_app(Path("."), mode=config.option.mode)
 
     if config.option.base_url is None:
-        config.option.base_url = config.option.env.get("BASE_URL", None)
+        config.option.base_url = os.environ.get("BASE_URL", None)
 
     if config.option.credentials is None:
-        config.option.credentials = config.option.env.get("CREDENTIALS", None)
+        config.option.credentials = os.environ.get("CREDENTIALS", None)
 
     if config.option.server_retry is None:
-        config.option.server_retry = config.option.env.get("TEST_SERVER_RETRY", None)
+        config.option.server_retry = os.environ.get("TEST_SERVER_RETRY", None)
         if config.option.server_retry is not None:
             config.option.server_retry = bool(int(config.option.server_retry))
 
