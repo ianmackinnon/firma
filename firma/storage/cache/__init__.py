@@ -25,6 +25,9 @@ class CacheRedis(object):
     def __init__(self, namespace, get_current_version_state, **kwargs):
         self._logger = kwargs.pop("logger", None)
         self._namespace = namespace
+        if not self._namespace:
+            raise ValueError("CacheRedis parameter `namespace` is required.")
+
         if "port" in kwargs and kwargs["port"] is None:
             del kwargs["port"]
 

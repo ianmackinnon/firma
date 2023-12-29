@@ -68,15 +68,26 @@ Host = namedtuple("Host", ("protocol", "host"))
 
 
 
-def defined(*args):
+def defined(options, key, type=None):
     """
-    Return the first defined value.
+    Return the first defined value found in:
+    -   Environment variable
+    -   Command line options
+    -   Defaults
     Undefined values are `None` and `""`.
     """
-    for arg in args:
-        if arg in (None, ""):
+    env_key = key.upper().replace("-", "_")
+
+    for value in (
+            os.environ.get(env_key, None),
+            getattr(options, key, None),
+            DEFAULTS.get(key, None)
+    ):
+        if value in (None, ""):
             continue
-        return arg
+        if type is not None:
+            return type(value)
+        return value
     return None
 
 
@@ -132,20 +143,26 @@ class ResourceBuildException(Exception):
 
 
 class Settings(dict):
+    @staticmethod
+    def _key(key):
+        return re.sub(r"\W|^(?=\d)", "_", key)
+
     def __getattr__(self, key):
+        key = self._key(key)
         value = self.get(key)
         if isinstance(value, dict) and not isinstance(value, Settings):
             self[key] = Settings(value)
             value = self.get(key)
         return value
 
-
     def __setattr__(self, key, value):
+        key = self._key(key)
         if isinstance(value, dict) and not isinstance(value, Settings):
             value = Settings(value)
         self[key] = value
 
     def __setitem__(self, key, value):
+        key = self._key(key)
         if isinstance(value, dict) and not isinstance(value, Settings):
             value = Settings(value)
         super().__setitem__(key, value)
@@ -153,6 +170,7 @@ class Settings(dict):
     def update(self, *args):
         for iter_ in args:
             for key in iter_:
+                key = self._key(key)
                 if (
                         key in self and
                         isinstance(self[key], dict) and
@@ -179,22 +197,22 @@ class Application(tornado.web.Application):
 
         defaults = dict(DEFAULTS, **(defaults or {}))
 
-        define("host", type=str, default=defaults["host"],
+        define("host", default=defaults["host"],
                help="Run as the given host")
         define("port", type=int, default=None,
                help="run on the given port")
         define("debug", type=bool, default=None,
                help="Debug mode. Automatic reload.")
 
-        define("mode", type=str, default=None,
+        define("mode", default=None,
                help="Include dotenv configuration files matching "
                "`.env.{mode}` and `.env.{mode}.local`")
 
         define("color", default=None,
                help="Force color format. Options are `ansi`.")
 
-        define("ssl_cert", default=None, help="SSL certificate path")
-        define("ssl_key", default=None, help="SSL private key path")
+        define("ssl-cert", default=None, help="SSL certificate path")
+        define("ssl-key", default=None, help="SSL private key path")
 
         define("cors", default=None, help="Hosts to allow CORS access "
                "(currently only accepts 'all').")
@@ -203,16 +221,18 @@ class Application(tornado.web.Application):
                help="Enable stats on /server-stats")
         define("label", default=None, help="Label to include in stats")
 
-        define("log", default=None,
+        define("log-dir", default=None,
                help="Log directory. Write permission required."
                "Logging is disabled if this option is not set.")
 
         tornado.options.parse_command_line()
         ssl_options = None
-        if options.ssl_cert and options.ssl_key:
+        ssl_cert = defined(options, "ssl_cert")
+        ssl_key = defined(options, "ssl_cert")
+        if ssl_cert and ssl_key:
             ssl_options = {
-                "certfile": options.ssl_cert,
-                "keyfile": options.ssl_key,
+                "certfile": ssl_cert,
+                "keyfile": ssl_key,
             }
 
         async def main():
@@ -227,6 +247,12 @@ class Application(tornado.web.Application):
             await asyncio.Event().wait()
 
         asyncio.run(main())
+
+
+    # Config
+
+    def defined(self, key, type=None):
+        return defined(self.settings.options, key, type=type)
 
 
     # Stats
@@ -324,18 +350,18 @@ class Application(tornado.web.Application):
 
         sibling.url = conf_url or None
 
-        self.add_stat("URL %s" % db_key, sibling.url or "offline")
+        self.add_stat(f"URL {db_key}", sibling.url or "offline")
 
 
     # URI Log
 
-    def init_log(self, options, name, propagate=None, level=None):
+    def init_log(self, name, log_dir=None, propagate=None, level=None):
         log = self.settings.app.log
 
         log[name] = {
             "log": logging.getLogger(
                 name if name.startswith("tornado")
-                else '%s.%s' % (self.name, name)
+                else f"{self.name}.{name}"
             )
         }
 
@@ -343,15 +369,15 @@ class Application(tornado.web.Application):
             log[name].log.propagate = propagate
         if level is not None:
             log[name].log.setLevel(level)
-        if options.log:
+        if log_dir:
             try:
-                os.makedirs(options.log)
+                os.makedirs(log_dir)
             except OSError as e:
                 if e.errno != errno.EEXIST:
                     raise e
 
             log[name].path = os.path.join(
-                options.log,
+                log_dir,
                 '%s.%s.log' % (self.name, name)
             )
 
@@ -532,28 +558,18 @@ class Application(tornado.web.Application):
         self.settings.app = {}
         self.settings.app.log = {}
 
-        self.label = self.settings.options.label
-        if self.settings.options.label:
-            self.add_stat("Label", self.settings.options.label)
+        self.label = self.defined("label")
+        if self.label:
+            self.add_stat("Label", self.label)
 
-        self.settings.debug = bool(defined(
-            self.settings.options.debug,
-            os.environ.get('DEBUG', None),
-        ))
+        self.settings.debug = self.defined("debug", type=bool)
         if self.settings.debug:
             self.add_stat("Debug", True)
 
-        self.settings.port = defined(
-            self.settings.options.port,
-            os.environ.get('PORT', None),
-            DEFAULTS["port"],
-        )
+        self.settings.port = self.defined("port", type=int)
         self.add_stat("Address", f"http://localhost:{self.settings.port}")
 
-        self.settings.cors = defined(
-            self.settings.options.cors,
-            os.environ.get('CORS', None),
-        )
+        self.settings.cors = self.defined("cors")
         if self.settings.cors:
             self.add_stat("CORS", self.settings.cors)
 
@@ -576,7 +592,7 @@ class Application(tornado.web.Application):
         self.settings = Settings(settings or {})
         self.init_settings(options)
 
-        if self.settings.options.color == "ansi":
+        if self.defined("color") == "ansi":
             root_handler = app_log.parent.handlers[0]
             formatter = root_handler.formatter
             formatter._colors = {
@@ -587,10 +603,11 @@ class Application(tornado.web.Application):
             }
             formatter._normal = "\033[0m"
 
-        self.init_log(options, "uri", propagate=False, level=logging.INFO)
-        self.init_log(options, "tornado")
+        log_dir = self.defined("log_dir")
+        self.init_log("uri", log_dir=log_dir, propagate=False, level=logging.INFO)
+        self.init_log("tornado", log_dir=log_dir)
 
-        if self.settings.options.status:
+        if self.defined("status", bool):
             handlers.insert(1, (r"/server-status", ServerStatusHandler))
             self.init_response_log(self.settings.app)
 
@@ -1553,13 +1570,8 @@ class ServerStatusHandler(tornado.web.RequestHandler):
                 sys.stderr.flush()
                 raise
 
-        label = self.application.title
-
-        if self.settings.options.label:
-            label = self.settings.options.label
-
         data = {
-            "label": label,
+            "label": self.label or self.application.title,
             "response": response,
             "duration": duration,
         }
