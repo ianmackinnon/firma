@@ -10,14 +10,14 @@ def env_app_path_list(
         mode: str | None = None
 ) -> list[Path]:
     path_list = [
-        env_path / ".env",
         env_path / ".env.local",
+        env_path / ".env",
     ]
     if mode:
-        path_list += [
-            env_path / f".env.{mode}",
+        path_list = [
             env_path / f".env.{mode}.local",
-        ]
+            env_path / f".env.{mode}",
+        ] + path_list
     return path_list
 
 
