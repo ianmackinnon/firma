@@ -106,7 +106,7 @@ def env_accounts():
             is_set[item].add(account)
 
     if (
-            not (is_set["NAME"] == is_set["PASS"] == is_set["PRIVS"])
+            not (is_set["NAME"] == is_set["PASS"])
             or (is_set["HOST"] - is_set["NAME"])
     ):
         LOG.error(".env DB user variables do not fully match:")
@@ -461,19 +461,22 @@ def mysql_test(
 
 
 def drop_database_tables(cursor, database):
-    # This requires the `metadata-lock-info-plugin`:
-    # https://mariadb.com/kb/en/metadata-lock-info-plugin/
-    cursor.execute("select table_name, user, host from information_schema.metadata_lock_info join information_schema.processlist on (id) where lock_type = 'Table metadata lock' and table_schema = '%s';" % database)
-    rows = list(cursor.fetchall())
-    if rows:
-        LOG.error("The following tables are locked and cannot be dropped:")
-        LOG.error("")
-        LOG.error("  %-16s | %-16s | %-16s", "Table", "User", "Host")
-        LOG.error("  %-16s | %-16s | %-16s", *(["-" * 16] * 3))
-        for row in rows:
-            LOG.error("  %-16s | %-16s | %-16s", *row)
-        LOG.error("")
-        sys.exit(1)
+    cursor.execute("select * from information_schema.tables where table_schema = 'information_schema' and table_name = 'metadata_lock_info';")
+    if cursor.fetchone():
+        cursor.execute("select table_name, user, host from information_schema.metadata_lock_info join information_schema.processlist on (id) where lock_type = 'Table metadata lock' and table_schema = '%s';" % database)
+        rows = list(cursor.fetchall())
+        if rows:
+            LOG.error("The following tables are locked and cannot be dropped:")
+            LOG.error("")
+            LOG.error("  %-16s | %-16s | %-16s", "Table", "User", "Host")
+            LOG.error("  %-16s | %-16s | %-16s", *(["-" * 16] * 3))
+            for row in rows:
+                LOG.error("  %-16s | %-16s | %-16s", *row)
+            LOG.error("")
+            sys.exit(1)
+    else:
+        LOG.warning("Table `information_schema.metadata_lock_info` does not exist. Unable to test for currently locked tables. Install the `metadata-lock-info-plugin` to create this table. See https://mariadb.com/kb/en/metadata-lock-info-plugin/")
+
 
     cursor.execute("SET FOREIGN_KEY_CHECKS = 0;")
     while True:
