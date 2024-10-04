@@ -83,12 +83,12 @@ def user_role(account):
 
 
 
-def env_accounts(env):
+def env_accounts():
     name_set = dict()
     pass_set = dict()
     role_set = dict()
 
-    for k in env:
+    for k in os.environ:
         if match := re.match(r"ES_USER_(ADMIN)_(NAME|PASS|ROLE)$", k):
             account, item = match.groups()
             if item == "NAME":
@@ -131,7 +131,7 @@ def get_search(
     return Es(
         api_root=os.environ["ES_API_ROOT"],
         prefix=os.environ["ES_PREFIX"],
-        ssl_cert=env.get("ES_SSL_CERT", None) or False,
+        ssl_cert=os.environ.get("ES_SSL_CERT", None) or False,
         auth=auth,
     )
 
@@ -835,7 +835,6 @@ def put_roles(
 
 def put_users(
         es: Es,
-        env: dict,
         users: Iterable,
 ):
     for account in users:
@@ -843,7 +842,7 @@ def put_users(
             "password" : os.environ[user_pass(account)],
         }
         role = os.environ[user_role(account)]
-        prefix = env.get("ES_PREFIX", None)
+        prefix = os.environ.get("ES_PREFIX", None)
         if prefix:
             role = f"{prefix}-{role}"
         definition["roles"] = [
@@ -856,7 +855,6 @@ def put_users(
 
 def delete_users(
         es: Es,
-        env: dict,
         users: Iterable,
 ):
     for account in users:
@@ -987,7 +985,7 @@ def manage_main(
         delete_indices(es, indices)
 
     if "delete-users" in args.command:
-        delete_users(es, env, USERS)
+        delete_users(es, USERS)
 
     if "delete-roles" in args.command:
         delete_roles(es, roles)
@@ -996,7 +994,7 @@ def manage_main(
         put_roles(es, roles)
 
     if "put-users" in args.command:
-        put_users(es, env, USERS)
+        put_users(es, USERS)
 
     if "put-indices" in args.command:
         put_indices(es, indices)
