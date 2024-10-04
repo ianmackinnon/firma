@@ -1,3 +1,4 @@
+import os
 import re
 import sys
 import json
@@ -113,7 +114,6 @@ def env_accounts(env):
 
 
 def get_search(
-        env: dict,
         account: str,
 ):
     assert account in ["elastic"] + USERS
@@ -124,13 +124,13 @@ def get_search(
         auth = account
     else:
         auth = {
-            "username": env[user_name(account)],
-            "password": env[user_pass(account)],
+            "username": os.environ[user_name(account)],
+            "password": os.environ[user_pass(account)],
         }
 
     return Es(
-        api_root=env["ES_API_ROOT"],
-        prefix=env["ES_PREFIX"],
+        api_root=os.environ["ES_API_ROOT"],
+        prefix=os.environ["ES_PREFIX"],
         ssl_cert=env.get("ES_SSL_CERT", None) or False,
         auth=auth,
     )
@@ -840,9 +840,9 @@ def put_users(
 ):
     for account in users:
         definition = {
-            "password" : env[user_pass(account)],
+            "password" : os.environ[user_pass(account)],
         }
-        role = env[user_role(account)]
+        role = os.environ[user_role(account)]
         prefix = env.get("ES_PREFIX", None)
         if prefix:
             role = f"{prefix}-{role}"
@@ -850,7 +850,7 @@ def put_users(
             role,
         ]
 
-        es.put_user(env[user_name(account)], definition)
+        es.put_user(os.environ[user_name(account)], definition)
 
 
 
@@ -860,7 +860,7 @@ def delete_users(
         users: Iterable,
 ):
     for account in users:
-        es.delete_user(env[user_name(account)])
+        es.delete_user(os.environ[user_name(account)])
 
 
 
@@ -978,11 +978,10 @@ def filter_indices(
 
 def manage_main(
         args: argparse.Namespace,
-        env: dict,
         roles: dict,
         indices: dict,
 ) -> None:
-    es = get_search(env, account="elastic")
+    es = get_search(account="elastic")
 
     if "delete-indices" in args.command:
         delete_indices(es, indices)

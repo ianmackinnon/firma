@@ -60,8 +60,9 @@ setuptools.setup(
         ],
     },
     scripts=[
-        "scripts/firma-mysql",
         "scripts/firma-env",
+        "scripts/firma-static",
+        "scripts/firma-mysql",
     ],
     setup_requires=[],
     tests_require=[],

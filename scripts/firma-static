@@ -1,0 +1,81 @@
+#!/usr/bin/env python3
+
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+import sys
+import logging
+import argparse
+import importlib
+from pathlib import Path
+
+from firma.util import init_logs
+
+
+
+LOG = logging.getLogger('firma-static')
+
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Link static files from Python packages.")
+
+    parser.add_argument(
+        "--verbose", "-v",
+        action="count", default=0,
+        help="Print verbose information for debugging.")
+    parser.add_argument(
+        "--quiet", "-q",
+        action="count", default=0,
+        help="Suppress warnings.")
+
+    parser.add_argument(
+        "-o",
+        "--out",
+        help="Destination directory"
+    )
+
+    parser.add_argument(
+        "package",
+        nargs="+",
+        metavar="PACKAGE",
+        help="Python package name"
+    )
+
+    args = parser.parse_args()
+    init_logs(LOG, args=args)
+
+    for package in args.package:
+        module = importlib.import_module(package, package=None)
+        init = Path(module.__file__)
+        src_static = init.parent / "static"
+
+        for src_file in src_static.glob("**/*"):
+            if src_file.is_dir():
+                continue
+            src_file_rel = src_file.relative_to(src_static)
+            src_file_rel_dir = src_file_rel.parent
+            if src_file_rel_dir:
+                dst_dir = args.out / src_file_rel_dir
+                if not dst_dir.is_dir():
+                    LOG.debug(f"create {dst_dir}")
+                    dst_dir.mkdir(exist_ok=True)
+            dst_file = args.out / src_file_rel
+            dst_file.unlink()
+            LOG.debug(f"create symlink {dst_file} to {src_file}")
+            dst_file.symlink_to(src_file)
+
+
+if __name__ == "__main__":
+    main()
