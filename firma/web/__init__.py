@@ -266,7 +266,7 @@ class Application(tornado.web.Application):
     def write_stats(self):
         self.add_stat(
             "Started",
-            datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+            datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         )
 
         sys.stdout.write("%s is running.\n" % self.title)
@@ -580,7 +580,6 @@ class Application(tornado.web.Application):
         Order of precedence:
 
         -   `options` - command line options
-        -   `settings.env` - variables from env files (not from environment).
         -   `settings` - app defaults
         """
 
@@ -686,7 +685,7 @@ class GenerateFileHandler(StaticFileHandler):
 
         cache_time = self.get_cache_time(path, modified, mime_type)
         if cache_time > 0:
-            self.set_header("Expires", datetime.datetime.utcnow() + \
+            self.set_header("Expires", datetime.datetime.now(datetime.UTC) + \
                                        datetime.timedelta(seconds=cache_time))
             self.set_header("Cache-Control", "max-age=" + str(cache_time))
         else:

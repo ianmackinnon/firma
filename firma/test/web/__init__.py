@@ -93,7 +93,7 @@ def get_duration_log(log_dir):
     if not VC_ID:
         return None
 
-    timestamp = datetime.datetime.utcnow().strftime("%Y-%m-%d.%H-%M-%S.utc")
+    timestamp = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d.%H-%M-%S.utc")
 
     log_path = Path(log_dir)
     file_path = log_path / f"test.{timestamp}.{VC_ID}.log"
