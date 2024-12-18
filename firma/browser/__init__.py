@@ -382,10 +382,20 @@ window.scrollTo(
         self.execute_script(script, element)
 
 
-    def scroll_and_click(self, element, name=None):
+    def scroll_and_click(
+            self,
+            element,
+            name=None,
+            delay: [None, int, float] = None
+    ):
         LOG.debug("Scrolling to link for %s...", name or element.text)
         self.scroll_to_center(element)
         LOG.debug("Done")
+
+        if delay:
+            LOG.debug("Sleeping %0.1fs...", delay)
+            time.sleep(delay)
+            LOG.debug("Done")
 
         LOG.debug("Clicking link for %s...", name or element.text)
         element.click()
