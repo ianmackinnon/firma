@@ -167,6 +167,12 @@ class SeleniumDriver():
 
         self.start(driver)
 
+
+    @property
+    def driver_url(self):
+        return self.command_executor._client_config.remote_server_addr
+
+
     def start(self, driver=None):
         if driver:
             self._driver = driver
@@ -228,10 +234,7 @@ class SeleniumDriver():
         -   Set by Selenium-Python in seconds
         """
 
-        result = requests.get(
-            f"{self.command_executor._url}"
-            f"/session/{self.session_id}/timeouts"
-        )
+        result = requests.get(f"{self.driver_url}/session/{self.session_id}/timeouts")
 
         timeouts = result.json()
         return timeouts["value"][key] / 1000
@@ -246,7 +249,7 @@ class SeleniumDriver():
 
     def send_command(self, cmd, params=None):
         url = (
-            f"{self.command_executor._url}"
+            f"{self.driver_url}"
             f"/session/{self.session_id}/chromium/send_command_and_get_result"
         )
 

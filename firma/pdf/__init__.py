@@ -32,13 +32,18 @@ def mm2pt(mm):
 def run(command):
     LOG.debug(" ".join(command))
 
-    proc = Popen(command, stdout=PIPE, stderr=PIPE)
+    # Since 2024-12 this fails for Ghostscript commands when not in shell mode.
+    proc = Popen(" ".join(command), stdout=PIPE, stderr=PIPE, shell=True)
     (out, err) = proc.communicate()
     if out:
-        LOG.debug(out.decode("utf8"))
+        LOG.debug("stdout: %s", out.decode("utf8"))
     if err:
-        LOG.error(err.decode("utf8"))
-    assert not proc.returncode
+        LOG.error("stderr: %s", err.decode("utf8"))
+    if proc.returncode:
+        LOG.error("return code: %d", proc.returncode)
+
+        LOG.error(" ".join(command))
+        raise Exception("PDF command failed.")
 
 
 
