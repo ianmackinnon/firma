@@ -9,7 +9,7 @@ import warnings
 from getpass import getpass
 from io import IOBase
 from difflib import ndiff
-from typing import Union, Iterable
+from typing import Iterable
 from pathlib import Path
 from urllib.parse import urlparse, urlunparse
 
@@ -43,7 +43,7 @@ USERS = [
 
 
 
-JsonObject = Union[dict, list, str, float, int, bool, None]
+JsonObject = [dict, list, str, float, int, bool, None]
 
 class EsException(Exception):
     def __init__(self, *args, **kwargs):
@@ -297,7 +297,7 @@ class Es():
     def put_role(
             self,
             name: str,
-            definition: Union[str, Path, IOBase, dict],
+            definition: [str, Path, IOBase, dict],
     ):
         LOG.debug(f"Loading role definition: `{definition}`.")
         definition = self._load_definition_object(definition, replace_prefix=True)
@@ -345,7 +345,7 @@ class Es():
     def put_user(
             self,
             name: str,
-            definition: Union[str, Path, IOBase, dict],
+            definition: [str, Path, IOBase, dict],
     ):
         message = definition
         if isinstance(message, dict):
@@ -390,7 +390,7 @@ class Es():
     def _calc_index_name(
             self,
             index_name: [str, None],
-    ) -> Union[str, None]:
+    ) -> [str, None]:
         """
         Calculate the index name for member functions.
         It may still be none
@@ -423,7 +423,7 @@ class Es():
 
     def _load_definition_object(
             self,
-            definition: Union[str, Path, IOBase, dict],
+            definition: [str, Path, IOBase, dict],
             replace_prefix: bool | None = None
     ):
         if isinstance(definition, str):
@@ -527,7 +527,7 @@ class Es():
     def put_index(
             self,
             name: str,
-            definition: Union[str, Path, IOBase, dict],
+            definition: [str, Path, IOBase, dict],
     ):
         name = self._calc_index_name(name)
         definition = self._load_definition_object(definition)

@@ -18,7 +18,6 @@ import shutil
 import logging
 import datetime
 import traceback
-from typing import Union
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from contextlib import contextmanager
@@ -57,7 +56,7 @@ def format_slug(text):
 
 def format_whitespace(
         text: str,
-        multiline: Union[bool, None] = None
+        multiline: [bool, None] = None
 ) -> str:
     re_whitespace = re.compile(r"\s+")
 
@@ -221,7 +220,7 @@ def init_logs(*logs, args=None):
 
 
 @contextmanager
-def AtomicOutputFile(path: Union[Path, str], **kwargs):
+def AtomicOutputFile(path: [Path, str], **kwargs):
     """
     Like a temporary file, but move to a desired permanent path
     if closed successful. Also create intermediate folders if necessary.

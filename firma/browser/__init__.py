@@ -17,7 +17,7 @@ import time
 import base64
 import shutil
 import logging
-from typing import Iterable, Union
+from typing import Iterable
 
 import requests
 
@@ -87,6 +87,7 @@ class SeleniumDriver():
             geometry=None,
             socks5_proxy=None,
             chrome_options_extra=None,
+            page_load_strategy=None,
     ):
 
         if chromedriver_path is None:
@@ -106,6 +107,9 @@ class SeleniumDriver():
         if chrome_options_extra:
             for v in chrome_options_extra:
                 chrome_options.add_argument(v)
+
+        if page_load_strategy:
+            chrome_options.page_load_strategy = page_load_strategy
 
         chrome_options.set_capability('goog:loggingPrefs', {
             "browser": "ALL",
@@ -148,6 +152,7 @@ class SeleniumDriver():
             on_create_callback=None,
             on_destroy_callback=None,
             chrome_options_extra=None,
+            page_load_strategy=None,
     ):
         self._show = show
         self._devtools = devtools
@@ -158,6 +163,7 @@ class SeleniumDriver():
         self._on_create_callback = on_create_callback
         self._on_destroy_callback = on_destroy_callback
         self._chrome_options_extra = chrome_options_extra
+        self._page_load_strategy = page_load_strategy
         self._js_log_buffer = []
 
         if self._default_timeout is None:
@@ -184,6 +190,7 @@ class SeleniumDriver():
                 geometry=self._geometry,
                 socks5_proxy=self._socks5_proxy,
                 chrome_options_extra=self._chrome_options_extra,
+                page_load_strategy=self._page_load_strategy,
             )
             if self._on_create_callback:
                 self._on_create_callback(self)
@@ -461,10 +468,10 @@ return jQuery(arguments[0]).contents().filter(function() {
 
     def clear_js_error(
             self,
-            level: Union[str, None] = None,
-            source: Union[str, None] = None,
-            message: Union[Iterable[str], str, None] = None,
-            wait: Union[int, None] = 1,
+            level: [str, None] = None,
+            source: [str, None] = None,
+            message: [Iterable[str], str, None] = None,
+            wait: [int, None] = 1,
     ):
         """
         `message`: if a list, error messages must contain all strings in list.
@@ -551,9 +558,9 @@ return jQuery(arguments[0]).contents().filter(function() {
 
     def javascript_errors(
             self,
-            host: Union[Iterable[str], str, None] = None,
-            ignore: Union[Iterable[str], str, None] = None,
-            allow_warnings: Union[bool, None] = None
+            host: [Iterable[str], str, None] = None,
+            ignore: [Iterable[str], str, None] = None,
+            allow_warnings: [bool, None] = None
     ):
         host_list = [host] if isinstance(host, str) else host
         ignore_set = (
