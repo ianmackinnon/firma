@@ -90,23 +90,31 @@ class SeleniumDriver():
             page_load_strategy=None,
     ):
 
+        chrome_options_list = []
+
         if chromedriver_path is None:
             chromedriver_path = DEFAULT_CHROMEDRIVER_PATH
 
         chrome_options = Options()
 
         if devtools:
-            chrome_options.add_argument('--auto-open-devtools-for-tabs')
+            chrome_options_list.append('--auto-open-devtools-for-tabs')
 
         if not show:
-            chrome_options.add_argument("--headless")
+            # Request the new headless mode which uses the same user-data-dir
+            # as the regular, visible mode.
+            chrome_options_list.append("--headless=new")
 
         if socks5_proxy:
-            chrome_options.add_argument(f"--proxy-server=socks5://{socks5_proxy}")
+            chrome_options_list.append(f"--proxy-server=socks5://{socks5_proxy}")
 
         if chrome_options_extra:
-            for v in chrome_options_extra:
-                chrome_options.add_argument(v)
+            chrome_options_list += chrome_options_extra
+
+        LOG.debug("Chromedriver options:")
+        for v in chrome_options_list:
+            LOG.debug("  %s", v)
+            chrome_options.add_argument(v)
 
         if page_load_strategy:
             chrome_options.page_load_strategy = page_load_strategy
