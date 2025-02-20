@@ -119,21 +119,13 @@ def format_sql(text) -> str:
 
 
 
-def format_sql_query(query) -> str:
-    # This seems to reverse LIMIT parameters.
-    params = query.statement.compile().params
-    text = str(query)
-    subs = []
-    for match in re.compile(r"%\(([^)]*)\)s").finditer(text):
-        subs.append((match.span(), params[match.group(1)]))
-    for span, value in reversed(subs):
-        if isinstance(value, datetime.date):
-            value = str(value)
-
-        if isinstance(value, str):
-            value = repr(value)
-
-        text = text[:span[0]] + str(value) + text[span[1]:]
+def format_sql_query(query, **kwargs) -> str:
+    text = query.statement.compile(
+        compile_kwargs={
+            "literal_binds": True,
+        },
+        **kwargs,
+    )
     text = format_sql(text)
     return text
 

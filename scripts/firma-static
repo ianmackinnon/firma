@@ -58,8 +58,13 @@ def main():
 
     for package in args.package:
         module = importlib.import_module(package, package=None)
-        init = Path(module.__file__)
-        src_static = init.parent / "static"
+
+        try:
+            parent = Path(module.__file__).parent
+        except TypeError:
+            parent = Path(module.__path__._path[0])
+
+        src_static = parent / "static"
 
         for src_file in src_static.glob("**/*"):
             if src_file.is_dir():
