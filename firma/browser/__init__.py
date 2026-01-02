@@ -14,6 +14,7 @@
 import os
 import re
 import time
+import json
 import base64
 import shutil
 import logging
@@ -120,6 +121,7 @@ class SeleniumDriver():
             chrome_options.page_load_strategy = page_load_strategy
 
         chrome_options.set_capability('goog:loggingPrefs', {
+            "performance": "ALL",
             "browser": "ALL",
         })
 
@@ -461,6 +463,9 @@ return jQuery(arguments[0]).contents().filter(function() {
             break
 
 
+
+
+
     def clear_js_error_url(self, url, status_code):
         """
         Assert that there exists a console error matching `url` and `status_code`.
@@ -610,6 +615,32 @@ return jQuery(arguments[0]).contents().filter(function() {
             errors.append(entry)
 
         return errors
+
+
+    def get_json_response_list(self, url=None):
+        for item in self.get_log("performance"):
+            message = json.loads(item['message'])["message"]
+
+            if message["method"] != "Network.responseReceived":
+                continue
+
+            params = message["params"]
+
+            if params["type"] != "XHR":
+                continue
+
+            request_id = params["requestId"]
+            response = params["response"]
+
+            body = self.execute_cdp_cmd("Network.getResponseBody", {
+                "requestId": request_id,
+            })
+
+            body = json.loads(body["body"])
+
+            yield response, body
+
+
 
 
     def wait_until(self, f, wait=None):
