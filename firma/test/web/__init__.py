@@ -120,8 +120,8 @@ def pytest_addoption(parser):
     parser.addoption("--hide-header", action="store_true")
     parser.addoption("--devtools", action="store_true")
     parser.addoption("--show-browser", action="store_true")
-    parser.addoption("--keep-browser", action="store_true")
-    parser.addoption("--keep-browser-always", action="store_true")
+    parser.addoption("--keep-browser", action="store", type=int, default=120)
+    parser.addoption("--keep-browser-always", action="store_true", type=int, default=10)
     parser.addoption("--geometry", action="store", default="1600x1200+2100+120")
     parser.addoption("--socks5-proxy", action="store")
     parser.addoption("--ssl-cert", action="append")
@@ -499,12 +499,12 @@ def selenium_function(request, selenium_url_hook):
         driver.save_screenshot(str(screenshot_path))
         LOG.warning("Saved screenshot at failure: `%s`", screenshot_path)
         if request.config.getoption("--keep-browser"):
-            keep = True
+            keep = request.config.getoption("--keep-browser")
     if request.config.getoption("--keep-browser-always"):
-        keep = True
+        keep = request.config.getoption("--keep-browser-always")
 
     if keep:
-        driver.keep(240)
+        driver.keep(keep)
 
     driver.destroy()
 
@@ -531,6 +531,9 @@ def get_chrome_options(request):
 
     if request.config.option.devtools:
         options["devtools"] = True
+
+    if request.config.option.chrome_options_extra:
+        options["chrome_options_extra"] = request.config.option.chrome_options_extra
 
     return options
 
@@ -572,10 +575,10 @@ def generate_selenium_session_fixture(**kwargs):
             keep = False
 
             if request.config.getoption("--keep-browser-always"):
-                keep = True
+                keep = request.config.getoption("--keep-browser-always")
 
             if keep:
-                driver.keep(5)
+                driver.keep(keep)
 
 
         driver = SeleniumDriver(
