@@ -114,6 +114,7 @@ def pytest_addoption(parser):
     parser.addoption("--driver")
     parser.addoption("--driver-path")
     parser.addoption("--driver-timeout", type=float, default=5)
+    parser.addoption("--chrome-options-extra", default=None)
     parser.addoption("--mode")
     parser.addoption("--profile", action="store_true")
     parser.addoption("--server-retry", action="store_true", default=None)

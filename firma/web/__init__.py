@@ -42,6 +42,7 @@ import tornado.auth
 import tornado.httpserver
 import tornado.options
 from tornado import escape
+from tornado import httputil
 from tornado.log import app_log
 from tornado.web import _has_stream_request_body
 
@@ -863,6 +864,13 @@ class BaseHandler(tornado.web.RequestHandler):
 
 
     # Copied from tornado.web. Keep updated
+    #
+    # Keep conditionals that mention firma
+    # Add module path to HTTPErrors
+    # Keep extra exception handlers at end
+    #
+    # Currently at 6.5.0
+    #
     # pylint: disable=bad-continuation,broad-except
     # Accept code from tornado that doesn't pass lint
     async def _execute(
@@ -884,6 +892,13 @@ class BaseHandler(tornado.web.RequestHandler):
             if hasattr(self, "_firma_request_hook"):
                 self._firma_request_hook()
 
+            # If we're not in stream_request_body mode, this is the place where we parse the body.
+            if not _has_stream_request_body(self.__class__):
+                try:
+                    self.request._parse_body()
+                except httputil.HTTPInputError as e:
+                    raise tornado.web.HTTPError(400, "Invalid body: %s" % e) from e
+
             self.path_args = [self.decode_argument(arg) for arg in args]
             self.path_kwargs = dict(
                 (k, self.decode_argument(v, name=k)) for (k, v) in kwargs.items()
@@ -892,6 +907,10 @@ class BaseHandler(tornado.web.RequestHandler):
             if hasattr(self, "_firma_process_args"):
                 self.path_args = self._firma_process_args(self.path_args)
 
+            self.path_args = [self.decode_argument(arg) for arg in args]
+            self.path_kwargs = {
+                k: self.decode_argument(v, name=k) for (k, v) in kwargs.items()
+            }
             # If XSRF cookies are turned on, reject form submissions without
             # the proper cookie
             if self.request.method not in (
@@ -903,7 +922,7 @@ class BaseHandler(tornado.web.RequestHandler):
 
             result = self.prepare()
             if result is not None:
-                result = await result
+                result = await result  # type: ignore
             if self._prepared_future is not None:
                 # Tell the Application we've finished with prepare()
                 # and are ready for the body to arrive.
