@@ -110,23 +110,23 @@ def get_duration_log(log_dir):
 
 
 def pytest_addoption(parser):
-    parser.addoption("--base-url", action="store")
-    parser.addoption("--driver", action="store")
-    parser.addoption("--driver-path", action="store")
-    parser.addoption("--driver-timeout", action="store", type=float, default=5)
-    parser.addoption("--mode", action="store")
+    parser.addoption("--base-url")
+    parser.addoption("--driver")
+    parser.addoption("--driver-path")
+    parser.addoption("--driver-timeout", type=float, default=5)
+    parser.addoption("--mode")
     parser.addoption("--profile", action="store_true")
     parser.addoption("--server-retry", action="store_true", default=None)
     parser.addoption("--hide-header", action="store_true")
     parser.addoption("--devtools", action="store_true")
     parser.addoption("--show-browser", action="store_true")
-    parser.addoption("--keep-browser", action="store_true")
-    parser.addoption("--keep-browser-always", action="store_true")
-    parser.addoption("--geometry", action="store", default="1600x1200+2100+120")
-    parser.addoption("--socks5-proxy", action="store")
+    parser.addoption("--keep-browser", type=int, default=None)
+    parser.addoption("--keep-browser-always", type=int, default=None)
+    parser.addoption("--geometry", default="1600x1200+2100+120")
+    parser.addoption("--socks5-proxy")
     parser.addoption("--ssl-cert", action="append")
-    parser.addoption("--credentials", action="store")
-    parser.addoption("--log-dir", action="store")
+    parser.addoption("--credentials")
+    parser.addoption("--log-dir")
 
 
 
@@ -499,12 +499,12 @@ def selenium_function(request, selenium_url_hook):
         driver.save_screenshot(str(screenshot_path))
         LOG.warning("Saved screenshot at failure: `%s`", screenshot_path)
         if request.config.getoption("--keep-browser"):
-            keep = True
+            keep = request.config.getoption("--keep-browser")
     if request.config.getoption("--keep-browser-always"):
-        keep = True
+        keep = request.config.getoption("--keep-browser-always")
 
     if keep:
-        driver.keep(240)
+        driver.keep(keep)
 
     driver.destroy()
 
@@ -531,6 +531,9 @@ def get_chrome_options(request):
 
     if request.config.option.devtools:
         options["devtools"] = True
+
+    if request.config.option.chrome_options_extra:
+        options["chrome_options_extra"] = request.config.option.chrome_options_extra
 
     return options
 
@@ -572,10 +575,10 @@ def generate_selenium_session_fixture(**kwargs):
             keep = False
 
             if request.config.getoption("--keep-browser-always"):
-                keep = True
+                keep = request.config.getoption("--keep-browser-always")
 
             if keep:
-                driver.keep(5)
+                driver.keep(keep)
 
 
         driver = SeleniumDriver(
