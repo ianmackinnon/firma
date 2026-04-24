@@ -638,6 +638,7 @@ def selenium_test_wrap_f(
 ):
     yield
 
+
     def is_ignored(item):
         for needle in ignore_errors:
             if isinstance(needle, re.Pattern):
@@ -651,6 +652,11 @@ def selenium_test_wrap_f(
 
 
     selenium.js_log_flush_to_buffer()
+
+    # Note some JS errors triggered by previous tests' requests
+    # (eg. favicon.ico 404). may arrive during the current test.
+    # Pre-flushing buffer before running the current test does not solve this.
+
     fail = None
     if selenium.js_log_buffer_length():
         for item in selenium.js_log_iterate_buffer():
