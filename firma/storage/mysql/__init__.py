@@ -276,7 +276,7 @@ def database_hash(
 ):
     db_options = {
         "user": os.environ[user_name(account)],
-        "passwd": os.environ[user_pass(account)],
+        "password": os.environ[user_pass(account)],
         "database": os.environ["DB_NAME"],
         "host": os.environ.get("DB_HOST", "localhost"),
     }
@@ -384,7 +384,7 @@ def get_root_cursor():
     return get_cursor({
         "host": "localhost",
         "user": "root",
-        "passwd": getpass.getpass("MySQL root password: "),
+        "password": getpass.getpass("MySQL root password: "),
     })
 
 
@@ -393,7 +393,7 @@ def get_account_cursor(account):
     return get_cursor({
         "host": "localhost",
         "user": os.environ[user_name(account)],
-        "passwd": os.environ[user_pass(account)],
+        "password": os.environ[user_pass(account)],
         # "unix_socket": "/var/run/mysqld/mysqld.sock",
     })
 
@@ -447,7 +447,7 @@ def mysql_test(
             pymysql.connect(
                 host="localhost",
                 user=os.environ[user_name(account)],
-                passwd=os.environ[user_pass(account)],
+                password=os.environ[user_pass(account)],
                 db=os.environ["DB_NAME"],
             )
         except pymysql.err.OperationalError:
