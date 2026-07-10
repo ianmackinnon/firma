@@ -46,6 +46,14 @@ from tornado import httputil
 from tornado.log import app_log
 from tornado.web import _has_stream_request_body
 
+from livereload.handlers import (
+    LiveReloadHandler,
+    LiveReloadJSHandler,
+    ForceReloadHandler
+)
+from livereload.watcher import get_watcher_class
+from livereload.server import LiveScriptInjector
+
 from sqlalchemy import MetaData, Table, text as sa_text
 from sqlalchemy.orm import aliased
 from sqlalchemy.exc import DatabaseError
@@ -204,6 +212,8 @@ class Application(tornado.web.Application):
                help="run on the given port")
         define("debug", type=bool, default=None,
                help="Debug mode. Automatic reload.")
+        define("livereload", type=bool, default=None,
+               help="Livereload mode. Automatically refresh browser.")
 
         define("mode", default=None,
                help="Include dotenv configuration files matching "
@@ -236,6 +246,8 @@ class Application(tornado.web.Application):
                 "keyfile": ssl_key,
             }
 
+
+
         async def main():
             app = cls()
             http_server = tornado.httpserver.HTTPServer(
@@ -244,7 +256,8 @@ class Application(tornado.web.Application):
                 ssl_options=ssl_options,
             )
             http_server.listen(app.settings.port)
-
+            if app.watcher:
+                LiveReloadHandler.start_tasks()
             await asyncio.Event().wait()
 
         asyncio.run(main())
@@ -544,6 +557,20 @@ class Application(tornado.web.Application):
 
     # Initialisation
 
+    @staticmethod
+    def parse_cli_bool_nullable(s, k):
+        s = s.strip()
+        try:
+            return {
+                "": None,
+                "1": True,
+                "0": False,
+            }[s]
+        except KeyError:
+            app_log.warning(f"Invalid value {repr(s)} for environment variable {repr(k.upper())}. Valid options are '0' or '1'.")
+
+        return 0
+
 
     def init_env(self):
         # Dotenv files will only be sought in the current working directory.
@@ -563,9 +590,19 @@ class Application(tornado.web.Application):
         if self.label:
             self.add_stat("Label", self.label)
 
-        self.settings.debug = self.defined("debug", type=bool)
+        self.settings.debug = self.defined(
+            "debug",
+            type=lambda x: self.parse_cli_bool_nullable(x, "debug")
+        )
         if self.settings.debug:
             self.add_stat("Debug", True)
+
+        self.settings.livereload = self.defined(
+            "livereload",
+            type=lambda x: self.parse_cli_bool_nullable(x, "livereload")
+        )
+        if self.settings.livereload:
+            self.add_stat("Live reload", True)
 
         self.settings.port = self.defined("port", type=int)
         self.add_stat("Address", f"http://localhost:{self.settings.port}")
@@ -574,6 +611,10 @@ class Application(tornado.web.Application):
         if self.settings.cors:
             self.add_stat("CORS", self.settings.cors)
 
+
+    def init_livereload(self):
+        watcher.watch('web/templates/')
+        watcher.watch('web/static/')
 
 
     def __init__(self, handlers, options, **settings):
@@ -610,6 +651,40 @@ class Application(tornado.web.Application):
         if self.defined("status", bool):
             handlers.insert(1, (r"/server-status", ServerStatusHandler))
             self.init_response_log(self.settings.app)
+
+        if self.settings.livereload:
+            if not self.settings.debug:
+                app_log.warning(f"DEBUG mode must be enabled for livereload to work.")
+            else:
+                watcher_cls = get_watcher_class()
+                watcher = watcher_cls()
+
+                self.init_livereload(LiveReloadHandler, watcher)
+
+                LiveReloadHandler.watcher = watcher
+                LiveReloadHandler.live_css = True
+
+                class ConfiguredTransform(LiveScriptInjector):
+                    script = escape.utf8(
+                        '<script type="text/javascript">(function(){'
+                        'var s=document.createElement("script");'
+                        "var port=(window.location.port || "
+                        "(window.location.protocol == 'https:' ? 443: 80));"
+                        's.src="//"+window.location.hostname+":"+port'
+                        '+ "/livereload.js?port=" + port;'
+                        'document.head.appendChild(s);'
+                        '})();</script>'
+                    )
+
+                handlers = [
+                    (r'/livereload', LiveReloadHandler),
+                    (r'/forcereload', ForceReloadHandler),
+                    (r'/livereload.js', LiveReloadJSHandler),
+                ] + handlers
+
+                self.watcher = watcher
+
+                self.settings.transforms=[ConfiguredTransform]
 
         _settings = self.settings
         # Resets `self.settings`:
