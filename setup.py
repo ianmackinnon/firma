@@ -39,9 +39,11 @@ setuptools.setup(
     ],
     python_requires='>=3',
     install_requires=[
-        "jsonschema",
         "humanize",
+        "jsonschema",
+	"livereload",
         "onetimepass",
+	"pyinotify",
         "pymysql",
         "pytest",
         "python-dateutil",
