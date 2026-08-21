@@ -256,7 +256,7 @@ class Application(tornado.web.Application):
                 ssl_options=ssl_options,
             )
             http_server.listen(app.settings.port)
-            if app.watcher:
+            if hasattr(app, "watcher"):
                 LiveReloadHandler.start_tasks()
             await asyncio.Event().wait()
 
