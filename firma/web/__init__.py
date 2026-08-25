@@ -612,7 +612,7 @@ class Application(tornado.web.Application):
             self.add_stat("CORS", self.settings.cors)
 
 
-    def init_livereload(self):
+    def init_livereload(self, LiveReloadHandler, watcher):
         watcher.watch('web/templates/')
         watcher.watch('web/static/')
 
