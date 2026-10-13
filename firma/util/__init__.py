@@ -232,13 +232,15 @@ def AtomicOutputFile(path: [Path, str], **kwargs):
         }
     }
 
+    name = None
     with NamedTemporaryFile(**kwargs) as temp:
         LOG.debug(
             "Opened temporary file `%s` for writing.",
             Path(temp.name).absolute())
 
         yield temp
+        name = temp.name
 
-        os.makedirs(path.parent, exist_ok=True)
-        shutil.move(temp.name, path)
-        LOG.info("Wrote `%s`", path.absolute())
+    os.makedirs(path.parent, exist_ok=True)
+    shutil.move(name, path)
+    LOG.info("Wrote `%s`", path.absolute())
